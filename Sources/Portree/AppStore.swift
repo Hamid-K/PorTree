@@ -25,9 +25,10 @@ final class AppStore {
     /// · TB/USB4 tunnel"), matched via NSScreen names + CoreGraphics modes.
     /// A key in here means the node IS that screen.
     private(set) var displayModes: [UInt64: String] = [:]
-    /// Displays attributed to a node that merely DRIVES them (a DP-out
-    /// adapter with a registry-invisible monitor on the far side).
-    private(set) var attachedDisplayModes: [UInt64: String] = [:]
+    /// Dedicated nodes for registry display sinks that no topology node
+    /// accounts for (plain-DP monitors behind TB→DP adapters), grafted under
+    /// the switch that drives them — same mechanism as removal ghosts.
+    private var sinkNodes: [(parentID: UInt64, node: DeviceNode)] = []
 
     /// Display-first categorization: a monitor with a built-in hub
     /// enumerates as a dock-category TB switch, but once a live screen is
@@ -245,6 +246,30 @@ final class AppStore {
         )
         self.monitor = monitor
         monitor.start()
+
+        // Display config changes (a plain-DP/HDMI monitor plugged into an
+        // adapter raises no USB/TB hotplug event) → rescan so sink nodes
+        // and mode chips stay current. The notification fires in bursts
+        // (resolution negotiation, profile updates), so coalesce here —
+        // rescanSilently() bypasses HotplugMonitor's own debounce.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in AppStore.shared.scheduleScreenRescan() }
+        }
+    }
+
+    private var screenRescanPending = false
+
+    private func scheduleScreenRescan() {
+        guard !screenRescanPending else { return }
+        screenRescanPending = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            self.screenRescanPending = false
+            self.rescanSilently()
+        }
     }
 
     func refresh() {
@@ -294,6 +319,10 @@ final class AppStore {
                 $0.ghostIDs.remove(node.id)
                 $0.ghostNodes.removeAll { $0.node.id == node.id }
                 $0.reindex()  // indexes must not keep pointing at expired ghosts
+                // A departed ghost can unblock sink attribution (it was an
+                // egress candidate while grafted) — recompute, don't wait
+                // for an unrelated snapshot.
+                $0.updateDisplayModes()
             }
         }
 
@@ -431,18 +460,20 @@ final class AppStore {
         parentOf = parents
     }
 
-    /// Snapshot roots with removal ghosts grafted back under their old
-    /// parents, so outline and graph both show them in place.
+    /// Snapshot roots with removal ghosts and synthesized display-sink nodes
+    /// grafted under their parents, so outline and graph both show them in
+    /// place.
     var displayRoots: [DeviceNode] {
         guard let snapshot else { return [] }
         var roots = snapshot.allRoots
-        guard !ghostNodes.isEmpty else { return roots }
+        let extras = ghostNodes + sinkNodes
+        guard !extras.isEmpty else { return roots }
         func graft(_ node: DeviceNode) -> DeviceNode {
             var updated = node
             updated.children = node.children.map(graft)
-            for ghost in ghostNodes where ghost.parentID == node.id
-                && !node.children.contains(where: { $0.id == ghost.node.id }) {
-                updated.children.append(ghost.node)
+            for extra in extras where extra.parentID == node.id
+                && !node.children.contains(where: { $0.id == extra.node.id }) {
+                updated.children.append(extra.node)
             }
             return updated
         }
@@ -785,8 +816,9 @@ final class AppStore {
 
         // Registry DP sinks join to CG screens by EDID identity (vendor/
         // product/serial), never by name — the sink carries the negotiated
-        // DP link rate the CG side doesn't know.
-        let sinks = DisplaySinks.enumerate().filter(\.active)
+        // DP link rate the CG side doesn't know. Sinks ride the snapshot,
+        // captured on the IOKit queue: no registry I/O on the MainActor.
+        let sinks = (snapshot?.displaySinks ?? []).filter(\.active)
         func sink(for displayID: CGDirectDisplayID) -> DisplaySink? {
             sinks.first {
                 $0.edidProductID == Int64(CGDisplayModelNumber(displayID))
@@ -805,10 +837,13 @@ final class AppStore {
         }
 
         // External displays we actually have nodes for, name-matched to
-        // NSScreen. ANY node category qualifies — a monitor with a built-in
-        // hub (Dell U-series) enumerates as a dock-category TB switch, not
-        // as a pure display.
-        for node in allNodes.values.sorted(by: { $0.id < $1.id }) where node.kind != .system {
+        // NSScreen. ANY topology node category qualifies — a monitor with a
+        // built-in hub (Dell U-series) enumerates as a dock-category TB
+        // switch, not as a pure display. Synthesized sink nodes are excluded:
+        // a sink card matching its own screen here would un-orphan the sink
+        // and tear its card down on the next pass (period-2 flicker).
+        for node in allNodes.values.sorted(by: { $0.id < $1.id })
+        where node.kind != .system && node.kind != .displaySink {
             let nodeName = node.name.lowercased()
             guard nodeName.count >= 4,
                   let screen = NSScreen.screens.first(where: {
@@ -838,26 +873,108 @@ final class AppStore {
             }
         }
 
-        // Orphan external screens: driven by the GPU but invisible to the
-        // USB/TB registry — a monitor on the far side of a DP-out adapter is
-        // a pure video sink. Attribution is shown only when it is provable by
-        // elimination: exactly one orphan screen and one DP egress adapter.
-        let orphans = NSScreen.screens.filter { screen in
-            guard let current = mode(of: screen) else { return false }
-            return !matchedScreens.contains(current.id) && CGDisplayIsBuiltin(current.id) == 0
+        // Sinks not accounted for by a matched node become DEDICATED display
+        // nodes: a plain-DP monitor behind a TB→DP adapter is a real registry
+        // entry (IOPortTransportStateDisplayPort, its own entry ID) — it
+        // deserves a card, not a chip on someone else's card.
+        //
+        // A sink whose EDID joins a screen that already name-matched a node
+        // (a hub-monitor like the U2725QE: the sink IS that node's panel)
+        // gets no extra node. The rest are grafted under the TB switch that
+        // provably drives them: egress candidates are switches with used DP
+        // outputs, minus one output for a switch that is itself a matched
+        // display (its own panel consumes one). Attribution happens only
+        // when exactly one candidate has spare used outputs — never a guess.
+        // Orphan = an active sink no topology node accounts for: its screen
+        // didn't match a node, AND no topology node carries its EDID name
+        // (a mirrored or lid-managed hub monitor has no NSScreen but is
+        // still its own switch's panel — never give it a duplicate card).
+        var orphanSinks: [DisplaySink] = []
+        for sink in sinks {
+            let joinedScreenID = NSScreen.screens.compactMap { mode(of: $0)?.id }.first {
+                sink.edidProductID == Int64(CGDisplayModelNumber($0))
+                    && (sink.edidSerial == nil || sink.edidSerial == Int64(CGDisplaySerialNumber($0)))
+            }
+            if let joinedScreenID, nodeForScreen[joinedScreenID] != nil { continue }
+            let sinkName = sink.name.lowercased()
+            let ownedByNode = allNodes.values.contains { node in
+                node.kind != .displaySink && node.name.count >= 4
+                    && (sinkName.contains(node.name.lowercased()) || node.name.lowercased().contains(sinkName))
+            }
+            if ownedByNode { continue }
+            orphanSinks.append(sink)
         }
-        let dpEgress = allNodes.values.filter { $0.category == .adapter }
-        var attached: [UInt64: String] = [:]
-        if orphans.count == 1, dpEgress.count == 1,
-           let screen = orphans.first, let current = mode(of: screen),
-           let adapter = dpEgress.first {
-            let rate = sink(for: current.id)?.linkRate.map { " · \($0)" } ?? ""
-            attached[adapter.id] = "\(screen.localizedName) · \(current.text) · via DP out\(rate)"
-            nodeForScreen[current.id] = adapter.id
+
+        var grafts: [(parentID: UInt64, node: DeviceNode)] = []
+        func makeSinkNode(_ sink: DisplaySink, subtitle: String) -> DeviceNode {
+            DeviceNode(
+                id: sink.registryID,
+                kind: .displaySink,
+                name: sink.name,
+                subtitle: subtitle,
+                className: "IOPortTransportStateDisplayPort",
+                category: .display,
+                tier: .infrastructure,
+                speedLabel: sink.linkRate ?? "",
+                linkSpeedBps: 0,
+                properties: sink.properties
+            )
+        }
+        func annotate(_ sink: DisplaySink, node: DeviceNode, via: String) {
+            // Mode chips + sidebar spotlight route to the new node. Each
+            // screen is claimed once — two serial-less same-model monitors
+            // must not both join the first screen.
+            guard let current = NSScreen.screens.compactMap(mode(of:)).first(where: { c in
+                nodeForScreen[c.id] == nil
+                    && sink.edidProductID == Int64(CGDisplayModelNumber(c.id))
+                    && (sink.edidSerial == nil || sink.edidSerial == Int64(CGDisplaySerialNumber(c.id)))
+            }) else { return }
+            let rate = sink.linkRate.map { " · \($0)" } ?? ""
+            result[node.id] = "\(current.text) · \(sink.downstreamType ?? "DisplayPort") · \(via)\(rate)"
+            nodeForScreen[current.id] = node.id
+        }
+
+        // Non-tunneled sinks are built-in ports (HDMI on Mac mini/MBP) — the
+        // registry itself says they can't be behind a TB device. They belong
+        // to the SoC node.
+        let builtInSinks = orphanSinks.filter { !$0.tunneled }
+        if let system = systemDisplayNode {
+            for sink in builtInSinks {
+                let node = makeSinkNode(sink, subtitle: "\(sink.downstreamType ?? "DisplayPort") sink · built-in port")
+                grafts.append((parentID: system.id, node: node))
+                annotate(sink, node: node, via: "built-in port")
+            }
+        }
+
+        // Tunneled sinks attach under the TB switch that provably drives
+        // them: the only live (non-ghost) switch with spare used DP outputs,
+        // after deducting one output for a switch that is itself a matched
+        // display (its own panel). Never a guess — ambiguity means the sink
+        // stays sidebar-only.
+        let tunneledSinks = orphanSinks.filter(\.tunneled)
+        if !tunneledSinks.isEmpty {
+            let egress = allNodes.values
+                .filter { $0.kind == .tbSwitch && !ghostIDs.contains($0.id) }
+                .map { node -> (id: UInt64, spare: Int64) in
+                    let used = node.dpOutUsed ?? 0
+                    let ownPanel: Int64 = result[node.id] != nil ? 1 : 0
+                    return (node.id, max(0, used - ownPanel))
+                }
+                .filter { $0.spare > 0 }
+            if egress.count == 1, let host = egress.first, host.spare >= Int64(tunneledSinks.count) {
+                for sink in tunneledSinks {
+                    let node = makeSinkNode(sink, subtitle: "\(sink.downstreamType ?? "DisplayPort") sink · TB/USB4 tunnel")
+                    grafts.append((parentID: host.id, node: node))
+                    annotate(sink, node: node, via: "via adapter")
+                }
+            }
         }
 
         displayModes = result
-        attachedDisplayModes = attached
+        let graftsChanged = !grafts.elementsEqual(sinkNodes) {
+            $0.parentID == $1.parentID && $0.node == $1.node
+        }
+        sinkNodes = grafts
         displayEntries = NSScreen.screens.compactMap { screen in
             guard let current = mode(of: screen) else { return nil }
             let builtIn = CGDisplayIsBuiltin(current.id) != 0
@@ -870,6 +987,9 @@ final class AppStore {
                 isBuiltIn: builtIn
             )
         }
+
+        // Synthesized nodes changed → the graft and every index must agree.
+        if graftsChanged { reindex() }
     }
 
     // MARK: Web identification

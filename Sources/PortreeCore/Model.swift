@@ -2,6 +2,11 @@ import Foundation
 
 public enum NodeKind: String, Sendable, Codable, Hashable {
     case usbController, usbDevice, tbDomain, tbSwitch, pciDevice, system
+    /// A physical monitor as the port-transport subsystem records it
+    /// (IOPortTransportStateDisplayPort) — a registry-real entry for a
+    /// display that is electrically invisible to the USB/TB topology,
+    /// e.g. a plain-DP monitor behind a TB→DP adapter.
+    case displaySink
 }
 
 /// Device family driving the icon; orthogonal to `Tier` (color).
@@ -147,11 +152,34 @@ extension DeviceNode {
     }
 
     /// Carrying video: a TB switch with active DP adapters (reserved fabric
-    /// bandwidth) or a DisplayLink device (video over plain USB data — the
-    /// opposite trade-off, worth telling apart).
+    /// bandwidth), a USB-graphics device (video over plain USB data — the
+    /// opposite trade-off, worth telling apart), or a display sink itself.
     public var videoTunnelCount: Int64 { properties["Portree DPTunnels"]?.intValue ?? 0 }
     public var isDisplayLink: Bool { vendorID == 0x17E9 }
-    public var carriesVideo: Bool { videoTunnelCount > 0 || isDisplayLink }
+    public var carriesVideo: Bool { videoTunnelCount > 0 || usbGraphicsVendor != nil || kind == .displaySink }
+
+    /// Video-over-USB graphics adapters (compressed, driver-rendered).
+    /// DisplayLink's VID is dedicated to graphics, so it is provable from
+    /// the VID alone. SMI (0x090C) and MCT (0x0711) share their VIDs with
+    /// flash controllers and ship virtual-CD storage functions on the real
+    /// adapters, so no interface-shape gate separates them reliably — they
+    /// are deliberately NOT matched (no guessed labels).
+    public var usbGraphicsVendor: String? {
+        vendorID == 0x17E9 ? "DisplayLink" : nil
+    }
+
+    /// USB billboard device (class 0x11): a USB-C alt-mode adapter
+    /// announcing itself. Per the Type-C spec a billboard that appears
+    /// usually means alt-mode entry FAILED (the "plugged in, no picture"
+    /// case) — though some adapters expose one on success too.
+    public var isBillboard: Bool {
+        deviceClassCode == 0x11
+            || interfaces.contains { $0.properties["bInterfaceClass"]?.intValue == 0x11 }
+    }
+
+    /// Display-output occupancy on TB adapters/docks ("DP out 1/2").
+    public var dpOutTotal: Int64? { properties["Portree DPOut Total"]?.intValue }
+    public var dpOutUsed: Int64? { properties["Portree DPOut Used"]?.intValue }
 
     public var containerIDKey: String? {
         guard let v = properties["kUSBContainerID"] else { return nil }
@@ -191,6 +219,9 @@ public struct Snapshot: Sendable, Codable {
     public let tbRoots: [DeviceNode]
     public let pciRoots: [DeviceNode]
     public let systemNode: DeviceNode?
+    /// Physical monitors as the port-transport subsystem records them —
+    /// captured here (on the IOKit queue) so the UI never touches IOKit.
+    public let displaySinks: [DisplaySink]
     public let takenAt: Date
 
     public init(
@@ -198,13 +229,27 @@ public struct Snapshot: Sendable, Codable {
         tbRoots: [DeviceNode],
         pciRoots: [DeviceNode] = [],
         systemNode: DeviceNode? = nil,
+        displaySinks: [DisplaySink] = [],
         takenAt: Date = Date()
     ) {
         self.usbRoots = usbRoots
         self.tbRoots = tbRoots
         self.pciRoots = pciRoots
         self.systemNode = systemNode
+        self.displaySinks = displaySinks
         self.takenAt = takenAt
+    }
+
+    // Hand-written decoding: baselines saved by older versions have no
+    // displaySinks key and must keep loading.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        usbRoots = try container.decode([DeviceNode].self, forKey: .usbRoots)
+        tbRoots = try container.decode([DeviceNode].self, forKey: .tbRoots)
+        pciRoots = try container.decodeIfPresent([DeviceNode].self, forKey: .pciRoots) ?? []
+        systemNode = try container.decodeIfPresent(DeviceNode.self, forKey: .systemNode)
+        displaySinks = try container.decodeIfPresent([DisplaySink].self, forKey: .displaySinks) ?? []
+        takenAt = try container.decodeIfPresent(Date.self, forKey: .takenAt) ?? Date()
     }
 
     public var allRoots: [DeviceNode] {
@@ -263,7 +308,8 @@ public struct Snapshot: Sendable, Codable {
             usbRoots: usbRoots,
             tbRoots: tbRoots,
             pciRoots: PCITopologyBuilder.build(tbRoots: tbRoots),
-            systemNode: system
+            systemNode: system,
+            displaySinks: DisplaySinks.enumerate()
         )
     }
 

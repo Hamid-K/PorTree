@@ -1,6 +1,6 @@
 # PorTree
 
-A native macOS inspector for the machine's peripheral fabric: USB, Thunderbolt/USB4, PCIe, and Apple-Fabric devices rendered as one live, foldable topology graph rooted at the SoC — with the raw IORegistry depth that `ioreg` gives you and System Information doesn't.
+**The most complete picture of everything plugged into your Mac — free.** PorTree renders USB, Thunderbolt/USB4, PCIe, Apple-Fabric NVMe, and every display down to the DP sink behind a dock or adapter as one live, foldable topology graph rooted at the SoC. It measures real throughput and power, grades bottlenecks and overloads with an automatic Doctor, flags never-seen and BadUSB-shaped devices with a persistent trust baseline, diffs hardware states for forensics, and exposes the full raw IORegistry — depth that `ioreg` has and System Information doesn't, with a GUI neither of them has. Free for personal use, and open source.
 
 Pure Swift + SwiftUI. Builds with SwiftPM and the Xcode Command Line Tools alone — no Xcode required, no Electron, no web views. All data comes from IOKit with live hot-plug notifications; nothing is estimated or invented.
 
@@ -24,7 +24,8 @@ Selected-device detail — live I/O while recording, camera capability, power al
 | Baseline diff | Freeze the current state — or load a saved snapshot JSON — then compare against live after any change: added / removed / changed devices, keyed by device identity so old baselines still match. The "why is there a new HID device" button |
 | Record mode | 1 Hz sampling of real byte counters (storage, network interfaces) — per-node sparklines, animated flow along busy links, aggregate traffic strip with top talkers. Devices without counters show nothing rather than estimates |
 | Live power | Rides the record tick: per-device allocation history (renegotiation steps chart), always-on mA chips with subtree Σ on hubs, allocation gauge vs the port's real current limit — and a kernel **overcurrent-counter watch** that flashes the node red and logs an alert the second actual overdraw is detected |
-| Displays & cameras | Monitors get resolution/refresh/connection and the negotiated DP link rate (registry DP sinks joined to live screens by EDID identity, never by name). Monitors with built-in hubs are labeled display-first with a "built-in hub" chip; a plain-DP monitor behind a TB→DP adapter is attributed to the adapter when provable by elimination. A dedicated sidebar **Displays** section lists every screen — click one to spotlight its node in the graph. UVC cameras get max format/fps and a live **IN USE** flag when another app is streaming |
+| Displays & cameras | Monitors get resolution/refresh/connection and the negotiated DP link rate (registry DP sinks joined to live screens by EDID identity, never by name). Monitors with built-in hubs are labeled display-first with a "built-in hub" chip. A plain-DP/HDMI monitor behind a TB→DP adapter — invisible to the USB/TB topology — gets a **dedicated display node** grafted under the adapter that provably drives it, built from its own registry sink entry (EDID name, lanes, link rate, connector type). A sidebar **Displays** section lists every screen — click one to spotlight its node. UVC cameras get max format/fps and a live **IN USE** flag when another app is streaming |
+| Display adapters | TB→DP/HDMI adapters show **display-output occupancy** ("DP out 1/2", from per-output hot-plug-detect state); USB-C alt-mode dongles are detected via their billboard device (class 0x11) with a distinct adapter tag; DisplayLink devices are labeled as compressed driver-rendered video, distinct from tunneled DP (other USB-graphics vendors share their VIDs with flash controllers and are deliberately not guessed). Display config changes trigger an automatic rescan |
 | Host summary | Measured from the registry: TB generation and per-port bandwidth, port count, USB controller count/revision, active DP tunnels; reference-table chip specs (max displays) where known, with an explicit note when a chip has no entry |
 | Tags | Every fact a node carries as readable chips: compact row with +N overflow on cards (expandable per card or all at once), the full set mirrored large in the inspector |
 | Identify | One click searches the web for the selected device's `vid:pid` + name — the fastest "what is this thing" for unknowns; right-click copies the device name or canonical ID (USB vid:pid, PCI vendor:device, TB UID) |
@@ -57,6 +58,7 @@ Feature rows extend the comparison table on the Hubble product page. [Hubble](ht
 | Live throughput graphs (storage/network) | ✓ | – | – | – | – | – |
 | Power allocation history + overcurrent alerts | ✓ | partial | – | – | – | – |
 | Display & camera modes (res/fps, in-use) | ✓ | – | – | partial | – | – |
+| DP-sink display nodes + adapter output occupancy | ✓ | – | – | – | – | raw |
 | Baseline snapshot diff | ✓ | – | – | – | – | – |
 | Unknown-device guard (trusted baseline, BadUSB heuristics) | ✓ | – | – | – | – | – |
 | Persisted event log | ✓ | – | – | – | – | – |

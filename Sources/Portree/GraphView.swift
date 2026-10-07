@@ -787,14 +787,31 @@ enum TagList {
             appendSplit(displayMode, color: .pink, to: &tags)
             // Display-first dual label: a matched monitor that also exposes
             // downstream devices is a display WITH a built-in hub.
-            if node.kind != .system, node.category != .display, !node.children.isEmpty {
+            if node.kind != .system, node.kind != .displaySink,
+               node.category != .display, !node.children.isEmpty {
                 tags.append(Tag(text: "built-in hub", color: .secondary))
             }
         } else if node.videoTunnelCount > 0 {
             tags.append(Tag(text: "DP \u{00D7}\(node.videoTunnelCount)", color: .pink))
         }
-        if let attached = store.attachedDisplayModes[node.id] {
-            appendSplit(attached, color: .pink, to: &tags)
+        if node.kind == .displaySink {
+            if let lanes = node.properties["LaneCount"]?.intValue {
+                tags.append(Tag(text: "\(lanes) DP lanes", color: .pink))
+            }
+            if let dfp = node.properties["Metadata"]?.dictValue?["DFP Type Description"]?.stringValue {
+                tags.append(Tag(text: "sink: \(dfp)", color: .pink))
+            }
+        }
+        // Display-output occupancy on adapters/docks (HPD per DP OUT). On a
+        // hub monitor one used output IS its own panel — say so, or "1/2"
+        // reads as an occupied external port.
+        if let total = node.dpOutTotal, total > 0 {
+            let used = node.dpOutUsed ?? 0
+            let ownPanel = store.displayModes[node.id] != nil && node.kind == .tbSwitch
+            tags.append(Tag(
+                text: "DP out \(used)/\(total)\(ownPanel && used > 0 ? " incl. panel" : "")",
+                color: used > 0 ? .pink : .secondary
+            ))
         }
         if let camera = store.cameraInfo[node.id] {
             appendSplit(camera.text, color: .pink, to: &tags)
@@ -802,8 +819,11 @@ enum TagList {
                 tags.append(Tag(text: "● IN USE", color: .red))
             }
         }
-        if node.isDisplayLink {
-            tags.append(Tag(text: "DisplayLink", color: .pink))
+        if let gfx = node.usbGraphicsVendor {
+            tags.append(Tag(text: verbose ? "USB graphics · \(gfx)" : gfx, color: .pink))
+        }
+        if node.isBillboard {
+            tags.append(Tag(text: verbose ? "USB-C alt-mode adapter (billboard)" : "alt-mode adapter", color: .orange))
         }
         if node.kind == .system {
             if let tb = node.properties["Measured: Thunderbolt"]?.stringValue {

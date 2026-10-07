@@ -75,6 +75,7 @@ public enum TBTopologyBuilder {
 
         var dpInCount: Int64 = 0    // video consumed here → this device is a display
         var dpOutCount: Int64 = 0   // video re-emitted → DP adapter / dock output
+        var dpOutUsed: Int64 = 0    // DP OUT with a display detected (HPD high)
         var pcieDownCount: Int64 = 0
         var usbDownCount: Int64 = 0
         let children = Registry.children(of: entry, plane: "IOService")
@@ -88,7 +89,24 @@ public enum TBTopologyBuilder {
             // this switch on reserved fabric bandwidth.
             if let adapterType = portProps["Adapter Type"]?.intValue {
                 if adapterType == 917_761 { dpInCount += 1 }
-                if adapterType == 917_762 { dpOutCount += 1 }
+                if adapterType == 917_762 {
+                    dpOutCount += 1
+                    // A DP OUT driving a monitor has hot-plug-detect high or
+                    // a populated tunnel Hop Table. HPD State lives on the
+                    // AppleThunderboltDPOutAdapter* CHILD of the port entry,
+                    // never on the port itself.
+                    var used = (portProps["Hop Table"]?.arrayValue?.isEmpty == false)
+                    if !used {
+                        let adapters = Registry.children(of: port, plane: "IOService")
+                        defer { adapters.forEach { IOObjectRelease($0) } }
+                        for adapter in adapters
+                        where Registry.properties(of: adapter)["HPD State"]?.boolValue == true {
+                            used = true
+                            break
+                        }
+                    }
+                    if used { dpOutUsed += 1 }
+                }
                 if adapterType == 1_048_833 { pcieDownCount += 1 }
                 if adapterType == 2_097_409 || adapterType == 2_162_945 { usbDownCount += 1 }
             }
@@ -132,6 +150,11 @@ public enum TBTopologyBuilder {
         // GPU feeding the fabric — not a link property).
         if !isRoot, dpInCount + dpOutCount > 0 {
             props["Portree DPTunnels"] = .int(dpInCount + dpOutCount)
+        }
+        // Display-output occupancy for adapters/docks ("DP out 1/2" chip).
+        if !isRoot, dpOutCount > 0 {
+            props["Portree DPOut Total"] = .int(dpOutCount)
+            props["Portree DPOut Used"] = .int(dpOutUsed)
         }
         // Icon family from the switch's adapter inventory — all generic
         // registry facts, no vendor matching:

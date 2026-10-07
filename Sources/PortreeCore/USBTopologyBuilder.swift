@@ -275,12 +275,14 @@ public enum USBTopologyBuilder {
         case 0x07: return .printer
         case 0x0B: return .smartCard
         case 0xE0: return .wireless
-        case 0x11: return .display
+        // Billboard (USB-C alt-mode announcement) — an adapter, not a display.
+        case 0x11: return .adapter
         case 0xFF: return .vendor
         default: break
         }
         // Composite/miscellaneous: infer from interfaces, then the name.
         let interfaceClasses = Set(interfaces.compactMap { $0.properties["bInterfaceClass"]?.intValue })
+        if interfaceClasses.contains(0x11) { return .adapter }
         if interfaceClasses.contains(0xE0) || lowered.contains("bluetooth") { return .wireless }
         if interfaceClasses.contains(0x08) { return .storage }
         if interfaceClasses.contains(0x07) { return .printer }

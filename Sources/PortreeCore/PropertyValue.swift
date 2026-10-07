@@ -68,6 +68,16 @@ public enum PropertyValue: Sendable, Hashable, Codable {
         return nil
     }
 
+    public var dictValue: [String: PropertyValue]? {
+        if case .dict(let d) = self { return d }
+        return nil
+    }
+
+    public var arrayValue: [PropertyValue]? {
+        if case .array(let a) = self { return a }
+        return nil
+    }
+
     public var typeName: String {
         switch self {
         case .string: return "String"
