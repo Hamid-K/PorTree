@@ -1,4 +1,4 @@
-# Hubble — Technical Design
+# Portree — Technical Design
 
 Native macOS USB/Thunderbolt topology debugger. Swift 6 + SwiftUI, SwiftPM-only build (no Xcode), IOKit/IORegistry as the sole data source. This document is the normative spec; every claim marked **[verified]** was empirically proven on the target machine (macOS 27.0.1, Apple Silicon, Swift 6.4, Command Line Tools only) during the research phase.
 
@@ -9,11 +9,11 @@ Native macOS USB/Thunderbolt topology debugger. Swift 6 + SwiftUI, SwiftPM-only 
 One SwiftPM package, two targets:
 
 ```
-Hubble/
+Portree/   (repo folder may still be named Hubble locally)
 ├── Package.swift                 # swift-tools-version 6.x, platforms: [.macOS(.v15)]
 ├── Makefile                      # ALL builds go through here (SDK pin, bash, test flags)
 ├── Sources/
-│   ├── HubbleCore/               # Library — no UI, headless-testable
+│   ├── PortreeCore/               # Library — no UI, headless-testable
 │   │   ├── RegistryReader.swift      # thin IOKit wrappers (matching, plane walks, props)
 │   │   ├── USBTopologyBuilder.swift  # IOUSB-plane walk → USBNode tree
 │   │   ├── TBTopologyBuilder.swift   # TB domain walk → TBNode tree
@@ -25,8 +25,8 @@ Hubble/
 │   │   ├── Identity.swift            # two-level device identity for history
 │   │   ├── Format.swift              # speed/UID/NVM/class formatters (unit-tested)
 │   │   └── Exporters.swift           # JSON snapshot export, JSONL event log
-│   └── HubbleApp/                # Executable — SwiftUI
-│       ├── HubbleApp.swift           # @main, @NSApplicationDelegateAdaptor
+│   └── PortreeApp/                # Executable — SwiftUI
+│       ├── PortreeApp.swift           # @main, @NSApplicationDelegateAdaptor
 │       ├── AppStore.swift            # @Observable @MainActor store
 │       ├── OutlineView.swift         # sidebar outline
 │       ├── GraphView.swift           # hierarchy chart (hero surface)
@@ -35,7 +35,7 @@ Hubble/
 │       ├── EventLogView.swift        # bottom drawer
 │       ├── HexView.swift             # OSData blob viewer
 │       └── Theme.swift               # colors, SF Symbols, legend
-├── Tests/HubbleCoreTests/        # swift-testing (NOT XCTest — absent from CLT)
+├── Tests/PortreeCoreTests/        # swift-testing (NOT XCTest — absent from CLT)
 ├── mockup/index.html             # static UI mockup (design artifact)
 ├── PLAN.md  DESIGN.md  README.md
 └── scripts/make-app.sh           # .app bundle assembly
@@ -169,7 +169,7 @@ Rules (each one verified the hard way):
 
 - Rows are generated from the **raw iterator drains, before the debounce** — bounce storms coalesce the *rescan*, never the log.
 - A device flapping ≥ 3 times in 3 s coalesces to one row with "×N"; in-memory ring capped at 2 000 rows.
-- Persistence: JSONL at `~/Library/Application Support/Hubble/events.jsonl`, 5 MB rotation, one file kept.
+- Persistence: JSONL at `~/Library/Application Support/Portree/events.jsonl`, 5 MB rotation, one file kept.
 - Row types: connected, disconnected, **re-enumerated** (see below), speed-retrain, TB link change, rescan.
 
 ### Arrival / ghost / re-enumeration presentation **[critique fix]**
@@ -202,7 +202,7 @@ All inputs already exist in the captured data; each diagnosis renders as an edge
 - *Device identity* = VID + PID + serial when a serial exists; otherwise VID + PID + **location path**, with diffs computed on the fallback marked **low-confidence** in the History tab (serial-less devices moving ports must not read as "new device"; two identical serial-less receivers must not collide silently).
 - *Instance identity* = device identity + location path + sessionID.
 
-History tab: persisted snapshots per device identity (`Application Support/Hubble/history/`); on reconnect, diff descriptors, negotiated speed (retrain detection), and topology position — flag changes (the BadUSB signal). Empty state: "No history yet — this device will be tracked from now on."
+History tab: persisted snapshots per device identity (`Application Support/Portree/history/`); on reconnect, diff descriptors, negotiated speed (retrain detection), and topology position — flag changes (the BadUSB signal). Empty state: "No history yet — this device will be tracked from now on."
 
 ---
 
@@ -292,17 +292,17 @@ Why each line exists:
 
 ### App bundle (`scripts/make-app.sh`)
 
-`Hubble.app/Contents/{MacOS,Resources}`; binary → `Contents/MacOS/Hubble`; `Info.plist`: `CFBundlePackageType=APPL`, `CFBundleExecutable`, `CFBundleIdentifier`, `CFBundleName`, `CFBundleShortVersionString`, `LSMinimumSystemVersion=15.0`, `NSPrincipalClass=NSApplication`, `NSHighResolutionCapable=true`, `CFBundleIconFile=AppIcon` — and **no `LSUIElement`** (it hides the Dock icon). Icon: `sips -z` size set → `iconutil -c icns`. Sign: `codesign --force --sign - Hubble.app` (ad-hoc; personal use needs no notarization).
+`Portree.app/Contents/{MacOS,Resources}`; binary → `Contents/MacOS/Portree`; `Info.plist`: `CFBundlePackageType=APPL`, `CFBundleExecutable`, `CFBundleIdentifier`, `CFBundleName`, `CFBundleShortVersionString`, `LSMinimumSystemVersion=15.0`, `NSPrincipalClass=NSApplication`, `NSHighResolutionCapable=true`, `CFBundleIconFile=AppIcon` — and **no `LSUIElement`** (it hides the Dock icon). Icon: `sips -z` size set → `iconutil -c icns`. Sign: `codesign --force --sign - Portree.app` (ad-hoc; personal use needs no notarization).
 
 **SwiftPM-executable gotcha [verified]:** without a bundle the process launches as a background app — `@NSApplicationDelegateAdaptor` must call `NSApp.setActivationPolicy(.regular)` + `NSApp.activate(ignoringOtherApps: true)` in `applicationDidFinishLaunching` (kept in the bundled app too; harmless).
 
-Package.swift: `platforms: [.macOS(.v15)]`, HubbleCore gets `linkerSettings: [.linkedFramework("IOKit")]`.
+Package.swift: `platforms: [.macOS(.v15)]`, PortreeCore gets `linkerSettings: [.linkedFramework("IOKit")]`.
 
 ---
 
 ## 9. Testing strategy
 
-swift-testing only (see §8). Unit targets, all headless in HubbleCore:
+swift-testing only (see §8). Unit targets, all headless in PortreeCore:
 - `Format` fixtures: 10 Gbps Int64 (truncation trap), Dell signed UID → `0x8087B6DC08810300`, NVM `(68,3) → "44.3"`, locationID nibble paths, speed-tier mapping incl. swapped Full/Low enums.
 - Topology builders against **recorded snapshot fixtures** (serialized `PropertyValue` trees captured from this machine) — twin-merge guards, union-of-children, canonical IDs; TB route-string/depth cross-checks.
 - DiffEngine: arrival/removal/re-enumeration classification incl. the replug (new entry ID, same identity) case.
@@ -321,4 +321,18 @@ Manual verification per milestone: compare against `ioreg -p IOUSB` / `ioreg -l`
 | No eject/rename/device actions | Viewer stays read-only; zero entitlements |
 | No sounds | Personal preference; event log covers the need |
 | `system_profiler` never used for USB; TB enrichment optional + failure-ignored | `SPUSBDataType` returns `[]` on this machine **[verified twice]** |
-| Rename app before GitHub publication | "Hubble" is the commercial app's name (tracked in PLAN.md open questions) |
+| Renamed to **Portree** (2026-10-07) | "Hubble" is the commercial app's name |
+
+---
+
+## 11. M7 — System & bandwidth layer, Toolbox (added 2026-10-07)
+
+**PCIe tree.** Enumerate `IOPCIDevice` + bridge nodes; decode `IOPCIExpressLinkStatus`/`IOPCIExpressLinkCapabilities` → link generation (2.5/5/8/16/32 GT/s) and lane width (x1/x2/x4…); bus/device/function from `reg`. Cross-links: tunneled devices via `IOPCITunnelled` + `Thunderbolt Entry ID` (§3.3) back to the carrying TB port; USB controllers that are PCIe functions link to their PCIe node. On Apple Silicon the built-in XHCIs are **SoC-fabric devices, not PCIe** — label them so; only tunneled/bridged devices get a PCIe path.
+
+**System root node.** SoC name (`machdep.cpu.brand_string`), core counts, memory via sysctl; parents the USB controllers, TB domains, and PCIe bridges. No public API exposes internal fabric utilization — the node is static context only.
+
+**Bandwidth overlay** (OFF by default; toolbar toggle + ⌥⌘B):
+- *Allocated layer* (registry truth): per-link negotiated speed vs upstream capacity ratio bar; TB per-tunnel allocations from lane-port `Hop Table` + `Maximum/Required Bandwidth Allocated`; DP tunnels = `LinkRate × LaneCount`; USB3 tunnel allocation from the USB "Gen T" adapter.
+- *Live layer* (best-effort, 1 Hz polling **only while overlay is on**): storage = `IOBlockStorageDriver` Statistics byte deltas; NICs = matching `en*` interface counters (registry path ↔ BSD name); controllers = `controller-statistics` deltas. No counter → "n/a", never estimated.
+
+**Toolbox pane** (⌘T): curated commands grouped Inspect / Live logs / Thunderbolt / Power — each with description, Copy, and Run-in-app (via `Process`, read-only commands only; sudo ones copy-only). Initial set: `ioreg -p IOUSB -l -w0`, `ioreg -c IOUSBHostDevice -l`, `ioreg -c IOThunderboltSwitch -l -w0`, `ioreg -c IOPCIDevice -l`, `system_profiler SPThunderboltDataType -json`, `log stream --predicate 'subsystem CONTAINS "usb"' --style compact`, `log show --last 5m --predicate 'eventMessage CONTAINS[c] "thunderbolt"'`, `pmset -g`, `sudo dmesg` (copy-only).

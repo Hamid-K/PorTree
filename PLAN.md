@@ -1,4 +1,4 @@
-# Hubble — Project Plan
+# Portree — Project Plan
 
 A personal, fully native macOS debugging tool that shows **every attached USB and Thunderbolt/USB4 device** as a live, foldable, color-coded **hierarchy chart**, with the raw inspection depth a security professional actually needs. Pure Swift + SwiftUI, built with SwiftPM alone (no Xcode required), zero web tech.
 
@@ -54,7 +54,14 @@ Everything below was **empirically proven** during research — not assumed:
 - JSON snapshot export of both trees with full raw properties
 - Search with ancestor-preserving filter and graph glow; sleep/wake rescan; ⌘R manual refresh
 
+### Should (added 2026-10-07, user request → M7)
+- **Toolbox pane**: curated USB/TB debugging commands (`ioreg` plane dumps, `system_profiler SPThunderboltDataType`, `log stream` predicates for IOUSBHostFamily/Thunderbolt, power queries) — description + one-click copy, in-app Run for read-only ones, sudo ones copy-only
+- **Bandwidth overlay** (OFF by default, toggle): per-link *negotiated-vs-upstream-capacity* share, TB per-tunnel allocations (`Hop Table`, `Maximum/Required Bandwidth Allocated`, DP `LinkRate × LaneCount`)
+- **PCIe layer**: enumerate `IOPCIDevice`/bridges — bus/device/function, link generation + lane width from `IOPCIExpressLinkStatus`/`LinkCapabilities` — cross-linked to the TB tunnel carrying them and to USB controllers that sit on PCIe; built-in Apple Silicon controllers labeled "SoC fabric (not PCIe)"
+- **System root node**: SoC name/cores (sysctl) parenting controllers and domains
+
 ### Could
+- **Live throughput sampling** (~1 Hz, only while the bandwidth overlay is on): storage via `IOBlockStorageDriver` Statistics byte counters, USB/TB NICs via their `en*` interface counters, XHCI `controller-statistics` deltas; devices without counters show "n/a" (macOS has no universal per-device byte counter; internal SoC fabric utilization has no public API — stated limitation)
 - usb.ids offline vendor/product name enrichment
 - Anomaly flags (HID interface on a "charger", serial change on reconnect)
 - PCIe tunnel listing per TB port; `SPThunderboltDataType` async enrichment (failure-ignored)
@@ -73,7 +80,8 @@ Everything below was **empirically proven** during research — not assumed:
 | **M3** | Live core: HotplugMonitor, debounced re-snapshot, entry-ID diffing, event log (+JSONL), arrival/ghost/re-enum presentation, sleep/wake rescan | Replugging a device produces correct animations and log rows; flapping is coalesced |
 | **M4** | Thunderbolt native: domain trees, link speeds incl. TB5 labeling, route strings, receptacle cross-links, Type-C/cable panel, tunnel badges | The Dell U2725QE chain renders as on this machine: root → Dell (40G) → Cable Matters adapter |
 | **M5** | Graph hero view: RT layout, Canvas edges (color+width), node cards, shared fold state, pan/zoom/fit done right, legend | Hierarchy chart is primary view; collapse animates; zoomed panning works |
-| **M6** | Doctor + ship: diagnostics engine, replug history/diff, JSON export, `.app` bundle + icns + codesign, README/build docs | `make app` emits a signed Hubble.app; diagnostics flag a real throttled device |
+| **M6** | Doctor + ship: diagnostics engine, replug history/diff, JSON export, `.app` bundle + icns + codesign, README/build docs | `make app` emits a signed Portree.app; diagnostics flag a real throttled device |
+| **M7** | System & bandwidth: PCIe tree (gen/lanes, TB-tunnel cross-links), System/SoC root node, bandwidth overlay (allocated; live sampling best-effort), Toolbox pane | Overlay off by default; Dell DP tunnel shows real allocated Gb/s; toolbox runs `ioreg` in-app |
 
 Sequencing rationale: usefulness ships early (outline + inspector by M2, live by M3); Thunderbolt is core, not stretch (M4); the graph lands once the data under it is trustworthy (M5).
 
@@ -87,11 +95,11 @@ Sequencing rationale: usefulness ships early (outline + inspector by M2, live by
 | Hub-twin merge makes the tree near-DAG | Layout keys on the USB3 personality; USB2 link drawn as secondary stub; strict merge guards (class 9 + ContainerID + same controller + speed split) |
 | Plug storms (one dock plug publishes dozens of nodes) | 150–200 ms debounce; full re-walk is milliseconds; event rows generated pre-debounce so nothing is lost |
 | Large trees (>100 devices on loaded dock chains) | Gate glow/edge-labels by node count & zoom; virtualize only if ever needed |
-| **Name collision**: "Hubble" is the shipping commercial app's name | Fine for a personal tool; **must rename before publishing on GitHub** — see open questions |
+| ~~Name collision~~ | Resolved: renamed to **Portree** (2026-10-07) |
 
 ## 6. Open questions (decide before open-sourcing)
 
-1. **Name.** "Hubble" collides with the commercial app we're cloning — rename before the repo goes public (candidates: *Periscope*, *BusLens*, *Topo*, *Spanner*, *ioscope*). Tracked as a repo TODO, not a blocker for development.
+1. ~~**Name.**~~ **Resolved 2026-10-07: the app is named _Portree_** (port + tree). The repo folder may still be called `Hubble` locally — rename at will; nothing in the build depends on the folder name.
 2. **License.** MIT or Apache-2.0 (Apache's patent grant is nice-to-have; MIT is simpler).
 3. Minimum macOS for other users: code targets macOS 15+, but registry keys are verified only on 26/27 — document as "best on Tahoe+".
 

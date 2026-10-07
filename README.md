@@ -1,4 +1,4 @@
-# Hubble
+# Portree
 
 A native macOS debugging tool that shows every attached **USB and Thunderbolt/USB4 device** as a live, foldable, color-coded **hierarchy chart** — with the raw IORegistry depth (full property tables, hex views, driver ownership, event log, replug diffing) that `ioreg` gives you and System Information doesn't.
 
@@ -18,11 +18,11 @@ Existing tools each miss something: System Information's USB pane is shallow (an
 ```sh
 make run    # dev
 make test   # unit tests (swift-testing)
-make app    # assemble ad-hoc-signed Hubble.app
+make app    # assemble ad-hoc-signed Portree.app
 ```
 
 Requires macOS 15+ and the Xcode Command Line Tools (full Xcode works too). See [DESIGN.md §8](DESIGN.md) for why the Makefile pins `SDKROOT`.
 
 ## License
 
-TBD (MIT or Apache-2.0 — see PLAN.md open questions). The app will be renamed before public release to avoid colliding with the commercial "Hubble — USB Doctor".
+TBD (MIT or Apache-2.0 — see PLAN.md open questions).
