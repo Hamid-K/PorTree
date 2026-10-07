@@ -35,6 +35,22 @@ public enum PCITopologyBuilder {
             }
         }
 
+        // NVMe controllers: real storage devices behind PCIe functions (TB/USB4
+        // enclosures) or straight on the SoC fabric (internal Apple NVMe).
+        var nvmeRoots: [DeviceNode] = []
+        let nvmeControllers = Registry.matchingServices("IONVMeController")
+        defer { nvmeControllers.forEach { IOObjectRelease($0) } }
+        for controller in nvmeControllers {
+            let node = buildNVMe(controller)
+            if let parentID = Registry.ancestorID(of: controller, conformingToAny: ["IOPCIDevice"], maxDepth: 6),
+               nodes[parentID] != nil {
+                parentOf[node.id] = parentID
+                nodes[node.id] = node
+            } else {
+                nvmeRoots.append(node)   // SoC-fabric NVMe: no PCIe path, honestly so
+            }
+        }
+
         // Assemble children bottom-up (sort for stable output).
         var childIDs: [UInt64: [UInt64]] = [:]
         for (child, parent) in parentOf { childIDs[parent, default: []].append(child) }
@@ -43,7 +59,33 @@ public enum PCITopologyBuilder {
             node.children = (childIDs[id] ?? []).sorted().map(assemble)
             return node
         }
-        return nodes.keys.filter { parentOf[$0] == nil }.sorted().map(assemble)
+        return nodes.keys.filter { parentOf[$0] == nil }.sorted().map(assemble) + nvmeRoots
+    }
+
+    private static func buildNVMe(_ controller: io_object_t) -> DeviceNode {
+        let props = Registry.properties(of: controller)
+        let model = (props["Model Number"]?.stringValue ?? Registry.name(of: controller))
+            .trimmingCharacters(in: .whitespaces)
+        let serial = (props["Serial Number"]?.stringValue ?? "").trimmingCharacters(in: .whitespaces)
+        let firmware = (props["Firmware Revision"]?.stringValue ?? "").trimmingCharacters(in: .whitespaces)
+        let tunneled = props["IOPCITunnelled"]?.boolValue == true
+
+        var subtitleParts = ["NVMe"]
+        if !firmware.isEmpty { subtitleParts.append("fw \(firmware)") }
+        if !serial.isEmpty { subtitleParts.append(serial) }
+
+        return DeviceNode(
+            id: Registry.entryID(of: controller),
+            kind: .pciDevice,
+            name: model.isEmpty ? "NVMe controller" : model,
+            subtitle: subtitleParts.joined(separator: " · "),
+            className: Registry.className(of: controller),
+            category: .storage,
+            tier: tunneled ? .thunderbolt : .infrastructure,
+            speedLabel: "NVMe",
+            linkSpeedBps: 0,
+            properties: props
+        )
     }
 
     private static func pciParentID(of service: io_object_t) -> UInt64? {
@@ -86,13 +128,26 @@ public enum PCITopologyBuilder {
             name: props["IOName"]?.stringValue ?? registryName,
             subtitle: subtitleParts.joined(separator: " · "),
             className: Registry.className(of: service),
-            category: .pci,
+            category: category(forClassCode: classCode),
             tier: tunneled ? .thunderbolt : .infrastructure,
             speedLabel: speedLabel,
             linkSpeedBps: gen.map { linkBps(gen: $0, width: width ?? 1) } ?? 0,
             properties: props,
             crossLinkID: crossLink
         )
+    }
+
+    /// The icon should say what the device IS, not just "PCI".
+    private static func category(forClassCode code: Int64?) -> DeviceCategory {
+        guard let code else { return .pci }
+        switch (code >> 8) & 0xFFFF {
+        case 0x0108, 0x0100, 0x0106, 0x0805: return .storage
+        case 0x0C03: return .controller
+        case 0x0200, 0x0280, 0x0D11, 0x0D20, 0x0D21, 0x0D80: return .network
+        case 0x0300, 0x0380: return .display
+        case 0x0403: return .audio
+        default: return .pci
+        }
     }
 
     /// vendor-id / device-id / class-code arrive as 4-byte little-endian Data
@@ -110,12 +165,15 @@ public enum PCITopologyBuilder {
     }
 
     /// PCIe link registers: bits [3:0] speed (1→2.5 GT/s … 5→32 GT/s),
-    /// bits [9:4] width.
+    /// bits [9:4] width. Apple fabric bridges report all-ones dummies
+    /// ("Gen15 ×63") — out-of-spec values mean "no real PCIe link", not data.
     private static func decodeLink(_ register: Int64?) -> (gen: Int?, width: Int?) {
         guard let register, register > 0 else { return (nil, nil) }
         let speed = Int(register & 0xF)
         let width = Int((register >> 4) & 0x3F)
-        return (speed > 0 ? speed : nil, width > 0 ? width : nil)
+        let validWidths: Set<Int> = [1, 2, 4, 8, 12, 16, 32]
+        guard (1...7).contains(speed), validWidths.contains(width) else { return (nil, nil) }
+        return (speed, width)
     }
 
     private static func linkBps(gen: Int, width: Int) -> Int64 {
@@ -135,9 +193,11 @@ public enum PCITopologyBuilder {
         switch (code >> 8) & 0xFFFF {
         case 0x0604: return "PCI bridge"
         case 0x0108: return "NVMe storage"
+        case 0x0805: return "SD host controller"
         case 0x0C03: return "USB controller"
         case 0x0200: return "Ethernet"
         case 0x0280: return "Network"
+        case 0x0D11, 0x0D20, 0x0D21, 0x0D80: return "Wireless"
         case 0x0300, 0x0380: return "Display"
         case 0x0403: return "Audio"
         default: return "PCI device (\(Format.hex(code, width: 6)))"

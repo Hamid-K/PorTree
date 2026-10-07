@@ -24,7 +24,7 @@ struct GraphView: View {
 
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
-                Color(nsColor: .underPageBackgroundColor)
+                store.canvasBackground.color
 
                 ZStack(alignment: .topLeading) {
                     TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !store.isRecording)) { timeline in
@@ -37,7 +37,8 @@ struct GraphView: View {
                             flagged: store.issues.flaggedEdges,
                             flow: store.isRecording ? store.rates : [:],
                             time: timeline.date.timeIntervalSinceReferenceDate,
-                            zoom: store.zoom
+                            zoom: store.zoom,
+                            background: store.canvasBackground
                         )
                     }
 
@@ -200,6 +201,7 @@ private struct EdgeCanvas: View {
     var flow: [UInt64: Double] = [:]
     var time: TimeInterval = 0
     var zoom: CGFloat = 1.0
+    var background: CanvasBackground = .system
 
     /// Orthogonal elbow with small rounded corners — reads much cleaner than
     /// bezier S-curves on dense trees.
@@ -285,21 +287,26 @@ private struct EdgeCanvas: View {
                 }
 
                 // Speed label at the elbow midpoint when zoomed in enough.
+                // Low-contrast tiers (infrastructure gray) fall back to the
+                // background's muted text color — never gray-on-gray.
                 if showLabels, edge.bps > 0, !dimmed.contains(edge.id) {
                     let mid = CGPoint(x: (edge.from.x + edge.to.x) / 2, y: (edge.from.y + edge.to.y) / 2)
+                    let textColor = edge.tier == .infrastructure ? background.mutedText : color
                     let text = context.resolve(
                         Text(Format.speedLabel(bps: edge.bps))
                             .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(color)
+                            .foregroundStyle(textColor)
                     )
                     let size = text.measure(in: CGSize(width: 120, height: 20))
                     let pad = CGRect(
-                        x: mid.x - size.width / 2 - 3, y: mid.y - size.height / 2 - 1,
-                        width: size.width + 6, height: size.height + 2
+                        x: mid.x - size.width / 2 - 3.5, y: mid.y - size.height / 2 - 1.5,
+                        width: size.width + 7, height: size.height + 3
                     )
-                    context.fill(
+                    context.fill(Path(roundedRect: pad, cornerRadius: 4), with: .color(background.chipFill))
+                    context.stroke(
                         Path(roundedRect: pad, cornerRadius: 4),
-                        with: .color(Color(nsColor: .underPageBackgroundColor).opacity(0.88))
+                        with: .color(textColor.opacity(0.35)),
+                        style: StrokeStyle(lineWidth: 0.6)
                     )
                     context.draw(text, at: mid)
                 }
@@ -483,12 +490,17 @@ struct CapsuleTag: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 8.5, weight: .medium))
+            .font(.system(size: 8.5, weight: .semibold))
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
             .foregroundStyle(color)
-            .background(color.opacity(0.1), in: Capsule())
-            .overlay(Capsule().stroke(color.opacity(0.45), lineWidth: 0.8))
+            .background {
+                // Opaque base under the tint — pure-transparency chips are
+                // unreadable over canvas edges.
+                Capsule().fill(Color(nsColor: .controlBackgroundColor))
+                Capsule().fill(color.opacity(0.14))
+            }
+            .overlay(Capsule().stroke(color.opacity(0.55), lineWidth: 0.8))
             .fixedSize()
     }
 }

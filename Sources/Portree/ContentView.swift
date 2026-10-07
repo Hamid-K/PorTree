@@ -69,6 +69,17 @@ struct ContentView: View {
                 }
                 .help("Legend overlay")
 
+                Menu {
+                    Picker("Canvas", selection: $store.canvasBackground) {
+                        ForEach(CanvasBackground.allCases, id: \.self) { background in
+                            Text(background.label).tag(background)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "circle.lefthalf.filled")
+                }
+                .help("Canvas background")
+
                 Toggle(isOn: $store.drawerShown) {
                     Image(systemName: "list.bullet.rectangle")
                 }

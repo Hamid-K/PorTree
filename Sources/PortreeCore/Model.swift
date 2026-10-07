@@ -160,6 +160,18 @@ public struct Snapshot: Sendable, Codable {
         (systemNode.map { [$0] } ?? []) + usbRoots + tbRoots + pciRoots
     }
 
+    /// The one way to take a full snapshot — GUI rescans and `--dump` must
+    /// never diverge on what they capture.
+    public static func capture() -> Snapshot {
+        let tbRoots = TBTopologyBuilder.build()
+        return Snapshot(
+            usbRoots: USBTopologyBuilder.build(),
+            tbRoots: tbRoots,
+            pciRoots: PCITopologyBuilder.build(tbRoots: tbRoots),
+            systemNode: SystemInfo.node()
+        )
+    }
+
     public func allByID() -> [UInt64: DeviceNode] {
         var out: [UInt64: DeviceNode] = [:]
         for root in allRoots {

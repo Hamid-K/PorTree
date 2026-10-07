@@ -12,7 +12,7 @@ extension Tier {
         case .usb3: return .blue
         case .usb4: return .purple
         case .thunderbolt: return .indigo
-        case .infrastructure: return Color.gray.opacity(0.55)
+        case .infrastructure: return Color.secondary.opacity(0.9)
         case .error: return .red
         }
     }
@@ -49,6 +49,42 @@ extension DeviceCategory {
         case .pci: return "memorychip"
         case .system: return "laptopcomputer"
         }
+    }
+}
+
+/// Graph canvas background — selectable because "gray line on gray canvas"
+/// is unreadable; each option carries a matching opaque chip fill for edge
+/// labels so text always sits on contrast.
+enum CanvasBackground: String, CaseIterable {
+    case system, graphite, light
+
+    var label: String {
+        switch self {
+        case .system: return "System"
+        case .graphite: return "Graphite"
+        case .light: return "Light"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .system: return Color(nsColor: .underPageBackgroundColor)
+        case .graphite: return Color(red: 0.085, green: 0.09, blue: 0.11)
+        case .light: return Color(white: 0.96)
+        }
+    }
+
+    var chipFill: Color {
+        switch self {
+        case .system: return Color(nsColor: .controlBackgroundColor)
+        case .graphite: return Color(red: 0.16, green: 0.17, blue: 0.20)
+        case .light: return .white
+        }
+    }
+
+    /// Readable label-text color on this background for low-contrast tiers.
+    var mutedText: Color {
+        self == .light ? Color(white: 0.25) : Color(white: 0.78)
     }
 }
 

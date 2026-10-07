@@ -32,7 +32,7 @@ struct PortreeApp: App {
         // exits — used for scripting and for verifying the data layer without
         // a window.
         if CommandLine.arguments.contains("--dump") {
-            let snapshot = Snapshot(usbRoots: USBTopologyBuilder.build(), tbRoots: TBTopologyBuilder.build())
+            let snapshot = Snapshot.capture()
             if let data = try? Exporters.json(snapshot) {
                 FileHandle.standardOutput.write(data)
                 FileHandle.standardOutput.write(Data("\n".utf8))

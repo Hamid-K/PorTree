@@ -41,6 +41,7 @@ final class AppStore {
     /// Bandwidth overlay (allocated share + live rates) — OFF by default.
     var bandwidthOverlay = false
     var orientation: LayoutOrientation = .leftToRight
+    var canvasBackground: CanvasBackground = .system
     /// Graph pan offset in viewport points (content is scaled by `zoom`).
     var panOffset: CGSize = CGSize(width: 24, height: 24)
     /// Last known graph viewport, for fit/zoom-around-center math.

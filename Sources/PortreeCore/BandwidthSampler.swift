@@ -60,7 +60,9 @@ public final class BandwidthSampler: @unchecked Sendable {
             guard case .dict(let stats)? = Registry.properties(of: driver)["Statistics"] else { continue }
             let total = (stats["Bytes (Read)"]?.intValue ?? 0) + (stats["Bytes (Write)"]?.intValue ?? 0)
             guard total > 0,
-                  let nodeID = Registry.ancestorID(of: driver, conformingToAny: ["IOUSBHostDevice", "IOPCIDevice"])
+                  // Nearest ancestor wins: USB storage → the USB device node,
+                  // NVMe → the IONVMeController node (internal or enclosure).
+                  let nodeID = Registry.ancestorID(of: driver, conformingToAny: ["IOUSBHostDevice", "IONVMeController", "IOPCIDevice"])
             else { continue }
             if let previous = lastStorage[nodeID], total >= previous {
                 rates[nodeID, default: 0] += Double(total - previous) / elapsed
