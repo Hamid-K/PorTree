@@ -36,6 +36,8 @@ final class AppStore {
     var zoom: CGFloat = 1.0
     var pendingScrollTarget: UInt64?
     var toolboxShown = false
+    /// Persistent legend overlay in the graph corner (palette button toggles).
+    var legendShown = true
     /// Bandwidth overlay (allocated share + live rates) — OFF by default.
     var bandwidthOverlay = false
     var orientation: LayoutOrientation = .leftToRight

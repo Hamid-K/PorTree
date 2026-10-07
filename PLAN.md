@@ -2,7 +2,7 @@
 
 A personal, fully native macOS debugging tool that shows **every attached USB and Thunderbolt/USB4 device** as a live, foldable, color-coded **hierarchy chart**, with the raw inspection depth a security professional actually needs. Pure Swift + SwiftUI, built with SwiftPM alone (no Xcode required), zero web tech.
 
-> **Status:** planned & designed, not yet implemented. See [DESIGN.md](DESIGN.md) for the full technical design.
+> **Status (2026-10-07):** M1–M7 implemented and building; `make run` launches the app, `make app` produces a signed `dist/Portree.app`. Remaining COULD items: usb.ids enrichment, cross-launch replug-history persistence, PNG export, nicknames. See [DESIGN.md](DESIGN.md) for the technical design.
 
 ---
 

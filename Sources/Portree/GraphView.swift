@@ -36,7 +36,8 @@ struct GraphView: View {
                             } ?? [],
                             flagged: store.issues.flaggedEdges,
                             flow: store.isRecording ? store.rates : [:],
-                            time: timeline.date.timeIntervalSinceReferenceDate
+                            time: timeline.date.timeIntervalSinceReferenceDate,
+                            zoom: store.zoom
                         )
                     }
 
@@ -117,6 +118,12 @@ struct GraphView: View {
                 .controlSize(.small)
                 .padding(10)
             }
+            .overlay(alignment: .bottomLeading) {
+                if store.legendShown {
+                    LegendView()
+                        .padding(10)
+                }
+            }
         }
     }
 }
@@ -133,18 +140,43 @@ struct WheelEvent {
 private struct ScrollWheelCatcher: NSViewRepresentable {
     let onWheel: (WheelEvent) -> Void
 
+    /// A hitTest-nil view never receives scrollWheel (AppKit routes scroll via
+    /// hitTest), so a passive view can't both catch wheels and pass clicks
+    /// through. Instead: a local event monitor that handles scroll events
+    /// whose cursor is inside this view's frame, and consumes them.
     final class WheelView: NSView {
         var onWheel: ((WheelEvent) -> Void)?
-        override func scrollWheel(with event: NSEvent) {
-            let location = convert(event.locationInWindow, from: nil)
-            onWheel?(WheelEvent(
-                deltaX: event.scrollingDeltaX,
-                deltaY: event.scrollingDeltaY,
-                command: event.modifierFlags.contains(.command),
-                location: CGPoint(x: location.x, y: bounds.height - location.y)
-            ))
-        }
+        private var monitor: Any?
+
+        override var isFlipped: Bool { true }  // top-left origin, matches SwiftUI
         override func hitTest(_ point: NSPoint) -> NSView? { nil }  // clicks pass through
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window == nil {
+                removeMonitor()
+            } else if monitor == nil {
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                    guard let self, let window = self.window, event.window === window else { return event }
+                    let location = self.convert(event.locationInWindow, from: nil)
+                    guard self.bounds.contains(location) else { return event }
+                    self.onWheel?(WheelEvent(
+                        deltaX: event.scrollingDeltaX,
+                        deltaY: event.scrollingDeltaY,
+                        command: event.modifierFlags.contains(.command),
+                        location: location
+                    ))
+                    return nil  // consumed
+                }
+            }
+        }
+
+        private func removeMonitor() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        deinit { removeMonitor() }
     }
 
     func makeNSView(context: Context) -> WheelView {
@@ -167,27 +199,45 @@ private struct EdgeCanvas: View {
     let flagged: Set<UInt64>
     var flow: [UInt64: Double] = [:]
     var time: TimeInterval = 0
+    var zoom: CGFloat = 1.0
+
+    /// Orthogonal elbow with small rounded corners — reads much cleaner than
+    /// bezier S-curves on dense trees.
+    private func elbow(from: CGPoint, to: CGPoint) -> Path {
+        var path = Path()
+        path.move(to: from)
+        let radius: CGFloat = 7
+        if horizontal {
+            if abs(from.y - to.y) < 1 {
+                path.addLine(to: to)
+            } else {
+                let midX = (from.x + to.x) / 2
+                path.addArc(tangent1End: CGPoint(x: midX, y: from.y),
+                            tangent2End: CGPoint(x: midX, y: to.y), radius: radius)
+                path.addArc(tangent1End: CGPoint(x: midX, y: to.y),
+                            tangent2End: to, radius: radius)
+                path.addLine(to: to)
+            }
+        } else {
+            if abs(from.x - to.x) < 1 {
+                path.addLine(to: to)
+            } else {
+                let midY = (from.y + to.y) / 2
+                path.addArc(tangent1End: CGPoint(x: from.x, y: midY),
+                            tangent2End: CGPoint(x: to.x, y: midY), radius: radius)
+                path.addArc(tangent1End: CGPoint(x: to.x, y: midY),
+                            tangent2End: to, radius: radius)
+                path.addLine(to: to)
+            }
+        }
+        return path
+    }
 
     var body: some View {
         Canvas { context, _ in
+            let showLabels = zoom >= 0.55 && edges.count <= 150
             for edge in edges {
-                var path = Path()
-                path.move(to: edge.from)
-                if horizontal {
-                    let midX = (edge.from.x + edge.to.x) / 2
-                    path.addCurve(
-                        to: edge.to,
-                        control1: CGPoint(x: midX, y: edge.from.y),
-                        control2: CGPoint(x: midX, y: edge.to.y)
-                    )
-                } else {
-                    let midY = (edge.from.y + edge.to.y) / 2
-                    path.addCurve(
-                        to: edge.to,
-                        control1: CGPoint(x: edge.from.x, y: midY),
-                        control2: CGPoint(x: edge.to.x, y: midY)
-                    )
-                }
+                let path = elbow(from: edge.from, to: edge.to)
                 let opacity = dimmed.contains(edge.id) ? 0.15 : 0.85
 
                 if edge.isBackbone {
@@ -232,6 +282,26 @@ private struct EdgeCanvas: View {
                         dashPhase: -CGFloat(time * speed)
                     )
                     context.stroke(path, with: .color(.white.opacity(0.85)), style: flowStyle)
+                }
+
+                // Speed label at the elbow midpoint when zoomed in enough.
+                if showLabels, edge.bps > 0, !dimmed.contains(edge.id) {
+                    let mid = CGPoint(x: (edge.from.x + edge.to.x) / 2, y: (edge.from.y + edge.to.y) / 2)
+                    let text = context.resolve(
+                        Text(Format.speedLabel(bps: edge.bps))
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(color)
+                    )
+                    let size = text.measure(in: CGSize(width: 120, height: 20))
+                    let pad = CGRect(
+                        x: mid.x - size.width / 2 - 3, y: mid.y - size.height / 2 - 1,
+                        width: size.width + 6, height: size.height + 2
+                    )
+                    context.fill(
+                        Path(roundedRect: pad, cornerRadius: 4),
+                        with: .color(Color(nsColor: .underPageBackgroundColor).opacity(0.88))
+                    )
+                    context.draw(text, at: mid)
                 }
             }
         }

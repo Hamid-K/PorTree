@@ -3,7 +3,6 @@ import PortreeCore
 
 struct ContentView: View {
     @Environment(AppStore.self) private var store
-    @State private var legendShown = false
 
     var body: some View {
         @Bindable var store = store
@@ -65,11 +64,10 @@ struct ContentView: View {
                 } label: { Image(systemName: "wrench.and.screwdriver") }
                     .help("Debugging toolbox (⌘T)")
 
-                Button {
-                    legendShown.toggle()
-                } label: { Image(systemName: "paintpalette") }
-                    .help("Legend")
-                    .popover(isPresented: $legendShown, arrowEdge: .bottom) { LegendView() }
+                Toggle(isOn: $store.legendShown) {
+                    Image(systemName: "paintpalette")
+                }
+                .help("Legend overlay")
 
                 Toggle(isOn: $store.drawerShown) {
                     Image(systemName: "list.bullet.rectangle")
@@ -197,25 +195,26 @@ private struct EmptyStateView: View {
     }
 }
 
-private struct LegendView: View {
+struct LegendView: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Legend").font(.system(size: 12, weight: .semibold))
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Links").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
             ForEach([Tier.usb1, .usb2, .usb3, .usb4, .thunderbolt, .infrastructure, .error], id: \.self) { tier in
-                HStack(spacing: 8) {
+                HStack(spacing: 7) {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(tier.color)
-                        .frame(width: 22, height: tier == .usb1 ? 2 : Theme.edgeWidth(bps: representativeBps(tier)))
-                    Text(tier.legendLabel).font(.system(size: 11))
+                        .frame(width: 20, height: max(2, tier == .usb1 ? 2 : Theme.edgeWidth(bps: representativeBps(tier))))
+                    Text(tier.legendLabel).font(.system(size: 10))
                 }
             }
-            Divider()
-            Text("Border & edge color = protocol tier · edge thickness = speed\nIcon = device class · speed is always shown as text too")
-                .font(.system(size: 10))
+            Divider().frame(width: 180)
+            Text("thickness = speed · dashed = USB 1.x\nwide soft bar = system backbone")
+                .font(.system(size: 9))
                 .foregroundStyle(.secondary)
         }
-        .padding(12)
-        .frame(width: 280)
+        .padding(10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(.quaternary, lineWidth: 1))
     }
 
     private func representativeBps(_ tier: Tier) -> Int64 {
