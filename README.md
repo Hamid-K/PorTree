@@ -23,40 +23,46 @@ Selected-device detail — live I/O while recording, camera capability, power al
 | Hot-plug | Arrival glow, 4 s removal ghosts, re-enumeration collapse (unplug/replug shows one amber pulse, not ghost + new node), flood-coalesced event log persisted as JSONL |
 | Baseline diff | Freeze the current state — or load a saved snapshot JSON — then compare against live after any change: added / removed / changed devices, keyed by device identity so old baselines still match. The "why is there a new HID device" button |
 | Record mode | 1 Hz sampling of real byte counters (storage, network interfaces) — per-node sparklines, animated flow along busy links, aggregate traffic strip with top talkers. Devices without counters show nothing rather than estimates |
+| Live power | Rides the record tick: per-device allocation history (renegotiation steps chart), always-on mA chips with subtree Σ on hubs, allocation gauge vs the port's real current limit — and a kernel **overcurrent-counter watch** that flashes the node red and logs an alert the second actual overdraw is detected |
+| Displays & cameras | Monitors get resolution/refresh/connection (DP tunnel vs DisplayLink vs internal); UVC cameras get max format/fps and a live **IN USE** flag when another app is streaming |
 | Host summary | Measured from the registry: TB generation and per-port bandwidth, port count, USB controller count/revision, active DP tunnels; reference-table chip specs (max displays) where known, with an explicit note when a chip has no entry |
+| Tags | Every fact a node carries as readable chips: compact row with +N overflow on cards (expandable per card or all at once), the full set mirrored large in the inspector |
+| Identify | One click searches the web for the selected device's `vid:pid` + name — the fastest "what is this thing" for unknowns |
 | Search | Live filter keeping ancestors, graph glow, match counter, ⌘G cycles through hits |
+| Appearance | Dark/Light/System app appearance, selectable canvas background, adjustable UI font scale (⌥⌘±), view state persisted |
 | Export | Snapshot JSON (⇧⌘E), graph PNG/JPEG, reproducible full-app screenshot — all also available headless (below) |
 | Toolbox | Curated `ioreg` / `log` / `system_profiler` / `pmset` debugging commands with one-click copy and in-app run for the read-only ones |
 
 ## Compared
 
-Feature rows follow the comparison table on the Hubble product page, extended with what PorTree adds. System Information is macOS's built-in viewer; `ioreg` is the raw registry CLI.
+Feature rows extend the comparison table on the Hubble product page. [Hubble](https://www.gingerbeardman.com/apps/hubble/), [Manifold](https://github.com/holdmysocks/Manifold), and [WhatCable](https://github.com/darrylmorley/whatcable) are the other macOS GUI topology tools; System Information and `ioreg` are the built-ins. Third-party columns reflect those tools' own published feature lists.
 
-| Feature | PorTree | Hubble | System Info | ioreg |
-|---|:-:|:-:|:-:|:-:|
-| Graph view | ✓ | ✓ | – | – |
-| Inspector panel | ✓ | ✓ | – | – |
-| Live updates | ✓ | ✓ | – | – |
-| Interactive | ✓ | ✓ | – | – |
-| Speed-coded links | ✓ | ✓ | – | – |
-| Throttle detection | ✓ | ✓ | – | – |
-| Power analysis | ✓ | ✓ | – | – |
-| Port occupancy / free ports | ✓ | ✓ | – | – |
-| Hot-plug effects | ✓ | ✓ | – | – |
-| Device nicknames | – | ✓ | – | – |
-| Device eject | – | ✓ | – | – |
-| Search | ✓ | ✓ | ✓ | – |
-| Export | JSON·PNG·JPEG | PNG·PDF | ✓ | text |
-| Native Thunderbolt/USB4 tree (TB5) | ✓ | – | partial | raw |
-| PCIe · NVMe · Apple Fabric | ✓ | – | partial | raw |
-| Raw IORegistry properties + hex view | ✓ | – | – | ✓ |
-| Interfaces with owning driver/pid | ✓ | – | – | partial |
-| Port error counters (overcurrent, enum failures) | ✓ | – | – | raw |
-| Persisted event log | ✓ | – | – | – |
-| Baseline snapshot diff | ✓ | – | – | – |
-| Live throughput record mode | ✓ | – | – | – |
-| Headless CLI (JSON / images) | ✓ | – | partial | ✓ |
-| License | free, noncommercial | $9.99 | built-in | built-in |
+| Feature | PorTree | Hubble | Manifold | WhatCable | System Info | ioreg |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Topology view | ✓ graph | ✓ graph | ✓ tree | ✓ menu tree | – | text |
+| Interactive canvas (pan/zoom/fold) | ✓ | ✓ | – | – | – | – |
+| Live hot-plug updates | ✓ | ✓ | ✓ | ✓ | – | – |
+| Speed-coded links | ✓ | ✓ | partial | partial | – | – |
+| Link-mismatch / throttle detection | ✓ | ✓ | ✓ | – | – | – |
+| Graded diagnostics (power, TT, depth, oversubscription) | ✓ | ✓ | partial | – | – | – |
+| Native TB/USB4 fabric (switches, routes, NVM, TB5) | ✓ | – | partial | ✓ | partial | raw |
+| PCIe · NVMe · Apple Fabric | ✓ | – | – | – | partial | raw |
+| Raw IORegistry properties + hex view | ✓ | – | – | – | – | ✓ |
+| Interfaces with owning driver/pid | ✓ | – | – | – | – | partial |
+| Port occupancy / free ports | ✓ | ✓ | ✓ | – | – | – |
+| Physical port positions (left/right) | – | ✓ | ✓ | – | – | – |
+| Live throughput graphs (storage/network) | ✓ | – | – | – | – | – |
+| Power allocation history + overcurrent alerts | ✓ | partial | – | – | – | – |
+| Display & camera modes (res/fps, in-use) | ✓ | – | – | partial | – | – |
+| Baseline snapshot diff | ✓ | – | – | – | – | – |
+| Persisted event log | ✓ | – | – | – | – | – |
+| Web device identification | ✓ | ✓ | – | – | – | – |
+| Headless CLI (JSON / images) | ✓ | – | – | – | partial | ✓ |
+| Device nicknames / eject | – | ✓ | – | – | – | – |
+| Intel Macs | untested¹ | ✓ | – | ? | ✓ | ✓ |
+| License | free, noncommercial | $9.99 | free, OSS | freemium | built-in | built-in |
+
+¹ Builds target macOS 15+; the registry keys are verified on Apple Silicon (macOS 26/27). CLI siblings worth knowing: [cyme](https://github.com/tuna-f1sh/cyme), usbtree, and mactop's TB tree.
 
 ## Diagnostics
 
