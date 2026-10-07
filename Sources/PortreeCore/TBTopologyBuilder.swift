@@ -68,17 +68,25 @@ public enum TBTopologyBuilder {
     }
 
     private static func buildSwitch(_ entry: io_object_t, inheritedLinkTenths: Int64 = 0) -> DeviceNode {
-        let props = Registry.properties(of: entry)
+        var props = Registry.properties(of: entry)
         var ports: [SubEntry] = []
         var childSwitches: [DeviceNode] = []
         var activeLinkTenthsGbps: Int64 = 0
 
+        var dpAdapterCount: Int64 = 0
         let children = Registry.children(of: entry, plane: "IOService")
         defer { children.forEach { IOObjectRelease($0) } }
         for port in children {
             guard Registry.conforms(port, to: "IOThunderboltPort") else { continue }
             let portProps = Registry.properties(of: port)
             ports.append(portEntry(port, portProps))
+
+            // DP IN/OUT adapters (0xE0101/0xE0102) = video tunneled through
+            // this switch on reserved fabric bandwidth.
+            if let adapterType = portProps["Adapter Type"]?.intValue,
+               adapterType == 917_761 || adapterType == 917_762 {
+                dpAdapterCount += 1
+            }
 
             // Active lane-port link speed: Link Bandwidth is in 0.1 Gb/s units
             // (400 = 40G); idle TB5 lane ports report 100 with Current Link
@@ -114,6 +122,12 @@ public enum TBTopologyBuilder {
         let uid = props["UID"]?.intValue
         let depth = props["Depth"]?.intValue ?? 0
         let isRoot = depth == 0
+        // Device-side DP adapters mean this switch's upstream link carries
+        // tunneled video on reserved bandwidth (root-side DP IN is just the
+        // GPU feeding the fabric — not a link property).
+        if !isRoot, dpAdapterCount > 0 {
+            props["Portree DPTunnels"] = .int(dpAdapterCount)
+        }
         // Apple Silicon host switches self-report Device Model Name = "iOS";
         // ignore the model at depth 0.
         let model = isRoot ? nil : props["Device Model Name"]?.stringValue

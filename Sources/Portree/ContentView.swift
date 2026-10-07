@@ -67,13 +67,14 @@ struct ContentView: View {
                         .overlay(alignment: .topTrailing) {
                             let count = store.issues.all.count
                             if count > 0 {
+                                let worst = store.issues.all.map(\.severity).max() ?? .info
                                 Text("\(count)")
                                     .font(.system(size: 8, weight: .bold))
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 3.5)
                                     .padding(.vertical, 0.5)
                                     .background(
-                                        store.issues.all.contains { $0.severity == .problem } ? Color.red : Color.orange,
+                                        worst == .problem ? Color.red : (worst == .warning ? Color.orange : Color.gray),
                                         in: Capsule()
                                     )
                                     .offset(x: 8, y: -7)
@@ -241,6 +242,12 @@ struct LegendView: View {
                         .frame(width: 20, height: max(2, tier == .usb1 ? 2 : Theme.edgeWidth(bps: representativeBps(tier))))
                     Text(tier.legendLabel).font(.system(size: 10))
                 }
+            }
+            HStack(spacing: 7) {
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color.pink)
+                    .frame(width: 20, height: 2)
+                Text("video on link (DP tunnel / DisplayLink)").font(.system(size: 10))
             }
             Divider().frame(width: 180)
             Text("thickness = speed · dashed = USB 1.x\nwide soft bar = system backbone")

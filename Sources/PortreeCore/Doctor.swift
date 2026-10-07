@@ -7,10 +7,15 @@ public enum Doctor {
 
     public struct Issue: Sendable, Hashable, Identifiable {
         public enum Kind: String, Sendable {
-            case throttled, speedCap, powerBudget, deepChain, ttContention
+            case throttled, speedCap, bottleneckHub, powerBudget, powerNearLimit
+            case overcurrent, portErrors, deepChain, ttContention, tbDowntrain
         }
-        public enum Severity: String, Sendable {
-            case warning, problem
+        public enum Severity: String, Sendable, Comparable {
+            case info, warning, problem
+            public static func < (a: Severity, b: Severity) -> Bool { a.rank < b.rank }
+            private var rank: Int {
+                switch self { case .info: 0; case .warning: 1; case .problem: 2 }
+            }
         }
         public var id: String { "\(kind.rawValue)-\(nodeID)" }
         public let kind: Kind
@@ -42,17 +47,27 @@ public enum Doctor {
             let tierLimit = controller.properties["UsbHostControllerTierLimit"]?.intValue ?? 6
 
             // Per-receptacle power budget: sum of sink allocations in the
-            // subtree vs the 3000 mA port limit.
+            // subtree vs the 3000 mA port limit — with an early warning band
+            // at 80% before the hard oversubscription problem.
             for topDevice in controller.children {
                 let subtree = topDevice.flattened()
                 let totalMA = subtree.compactMap(\.powerSinkMA).reduce(0, +)
-                if totalMA > 3000 {
+                let limit: Int64 = topDevice.properties["Port kUSBWakePortCurrentLimit"]?.intValue ?? 3000
+                if totalMA > limit {
                     issues.append(Issue(
                         kind: .powerBudget,
                         severity: .problem,
                         nodeID: topDevice.id,
                         title: "Power budget oversubscribed",
-                        detail: "Devices below request \(totalMA) mA total; the port limit is 3000 mA. Expect brown-outs or disconnects under load."
+                        detail: "Devices below request \(totalMA) mA total; the port limit is \(limit) mA. Expect brown-outs or disconnects under load."
+                    ))
+                } else if totalMA * 5 >= limit * 4 {
+                    issues.append(Issue(
+                        kind: .powerNearLimit,
+                        severity: .warning,
+                        nodeID: topDevice.id,
+                        title: "Approaching port power limit",
+                        detail: "Devices below request \(totalMA) of \(limit) mA (\(totalMA * 100 / limit)%). One more bus-powered device may push the port over."
                     ))
                 }
             }
@@ -64,22 +79,57 @@ public enum Doctor {
                 if let capability, node.linkSpeedBps > 0, capability > node.linkSpeedBps {
                     if upstreamMin < capability {
                         issues.append(Issue(
-                            kind: .throttled,
-                            severity: .problem,
+                            kind: node.isHub ? .bottleneckHub : .throttled,
+                            severity: node.isHub ? .warning : .problem,
                             nodeID: node.id,
-                            title: "Throttled by upstream link",
-                            detail: "\(node.name) is USB \(Format.speedLabel(bps: capability))-capable but negotiated \(node.speedLabel); an upstream hop tops out at \(Format.speedLabel(bps: upstreamMin)). Move it closer to the Mac or use a faster hub."
+                            title: node.isHub ? "Hub bottlenecked by upstream" : "Throttled by upstream link",
+                            detail: node.isHub
+                                ? "\(node.name) is \(Format.speedLabel(bps: capability))-capable but its upstream path tops out at \(Format.speedLabel(bps: upstreamMin)) — everything behind this hub shares the weaker link."
+                                : "\(node.name) is \(Format.speedLabel(bps: capability))-capable but negotiated \(node.speedLabel); an upstream hop tops out at \(Format.speedLabel(bps: upstreamMin)). Move it closer to the Mac or use a faster hub."
                         ))
                         flaggedEdges.insert(node.id)
                     } else {
                         issues.append(Issue(
                             kind: .speedCap,
-                            severity: .warning,
+                            severity: node.isHub ? .info : .warning,
                             nodeID: node.id,
-                            title: "Below rated speed",
-                            detail: "\(node.name) reports \(Format.bcd(node.properties["bcdUSB"]?.intValue ?? 0)) capability (\(Format.speedLabel(bps: capability))) but negotiated \(node.speedLabel). Cable, port, or device-side limit."
+                            title: node.isHub ? "Hub negotiated below capability" : "Below rated speed",
+                            detail: "\(node.name) reports \(Format.bcd(node.properties["bcdUSB"]?.intValue ?? 0)) capability (\(Format.speedLabel(bps: capability))) but negotiated \(node.speedLabel). Cable, port, or device-side limit\(node.isHub ? " — a bottleneck for devices behind it" : "")."
                         ))
                     }
+                }
+
+                // Port error counters from the IOService-plane port object.
+                let overcurrent = (node.properties["Port kPortStatOverCurrentCount"]?.intValue ?? 0)
+                    + (node.properties["Overcurrent Count"]?.intValue ?? 0)
+                if overcurrent > 0 {
+                    issues.append(Issue(
+                        kind: .overcurrent,
+                        severity: .problem,
+                        nodeID: node.id,
+                        title: "Overcurrent events recorded",
+                        detail: "\(overcurrent) overcurrent event\(overcurrent == 1 ? "" : "s") on this port since boot — the device (or its cable) drew more than the port could deliver."
+                    ))
+                }
+                let enumFails = (node.properties["Port kPortStatEnumerationFailureCount"]?.intValue ?? 0)
+                    + (node.properties["Port kPortStatAddressFailureCount"]?.intValue ?? 0)
+                if enumFails > 0 {
+                    issues.append(Issue(
+                        kind: .portErrors,
+                        severity: .warning,
+                        nodeID: node.id,
+                        title: "Enumeration failures on this port",
+                        detail: "\(enumFails) enumeration/address failure\(enumFails == 1 ? "" : "s") recorded since boot — flaky cable or marginal device."
+                    ))
+                }
+                if let linkErrors = node.properties["Port link-error-count"]?.intValue, linkErrors > 0 {
+                    issues.append(Issue(
+                        kind: .portErrors,
+                        severity: .info,
+                        nodeID: node.id,
+                        title: "Link errors recorded",
+                        detail: "\(linkErrors) SuperSpeed link error\(linkErrors == 1 ? "" : "s") since boot."
+                    ))
                 }
 
                 if node.isHub {
@@ -118,6 +168,28 @@ public enum Doctor {
                             detail: "\(slowDescendants.count) low/full-speed devices share this single-TT hub's one translator (\(slowDescendants.map(\.name).joined(separator: ", ")))."
                         ))
                     }
+                }
+            }
+        }
+
+        // Thunderbolt: a TB5-capable port trained at 40/80 Gb/s means the
+        // cable or the peer is the limit — exactly the "capable node on a
+        // weaker link" case, fabric edition.
+        for domain in snapshot.tbRoots {
+            for node in domain.flattened() where node.kind == .tbSwitch {
+                for port in node.interfaces {
+                    guard let supported = port.properties["Supported Link Speed"]?.intValue, supported >= 14,
+                          let current = port.properties["Current Link Speed"]?.intValue, current > 0,
+                          let bandwidth = port.properties["Link Bandwidth"]?.intValue, bandwidth < 1200
+                    else { continue }
+                    issues.append(Issue(
+                        kind: .tbDowntrain,
+                        severity: .warning,
+                        nodeID: node.id,
+                        title: "TB link trained below capability",
+                        detail: "This port supports up to 120 Gb/s but the link trained at \(Format.tbLinkBandwidthLabel(tenthsGbps: bandwidth)) — cable or peer-device limit."
+                    ))
+                    break
                 }
             }
         }

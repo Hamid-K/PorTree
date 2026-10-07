@@ -264,6 +264,17 @@ private struct EdgeCanvas: View {
                 if edge.dashed { style.dash = [6, 5] }
                 context.stroke(path, with: .color(color.opacity(opacity)), style: style)
 
+                // Video tunnel marker: a pink companion line means this link
+                // carries DP/DisplayLink video alongside (or inside) the data.
+                if edge.video {
+                    let videoPath = path.offsetBy(dx: horizontal ? 0 : -5, dy: horizontal ? -5 : 0)
+                    context.stroke(
+                        videoPath,
+                        with: .color(Color.pink.opacity(opacity * 0.85)),
+                        style: StrokeStyle(lineWidth: 1.6, lineCap: .round, dash: [2.5, 3.5])
+                    )
+                }
+
                 // Merged hub twin: thin parallel stub for the USB2 personality.
                 if edge.secondary {
                     let offsetPath = path.offsetBy(dx: horizontal ? 0 : 5, dy: horizontal ? 5 : 0)
@@ -392,6 +403,18 @@ private struct NodeCard: View {
                             text: node.isHub || node.kind == .usbController ? "Σ \(power) mA" : "\(power) mA",
                             color: .mint
                         )
+                    }
+                    if node.videoTunnelCount > 0 {
+                        CapsuleTag(text: "DP ×\(node.videoTunnelCount)", color: .pink)
+                    }
+                    if node.isDisplayLink { CapsuleTag(text: "DisplayLink", color: .pink) }
+                    if node.kind == .system {
+                        if let measured = node.properties["Measured: Thunderbolt"]?.stringValue {
+                            CapsuleTag(text: measured, color: .indigo)
+                        }
+                        if let displays = node.properties["Spec: Displays"]?.stringValue {
+                            CapsuleTag(text: displays, color: .secondary)
+                        }
                     }
                     if node.isTunneled { CapsuleTag(text: "⚡ tunnel", color: .indigo) }
                     if node.twin != nil { CapsuleTag(text: "×2", color: .secondary) }

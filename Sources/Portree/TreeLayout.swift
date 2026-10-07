@@ -42,6 +42,7 @@ struct TreeLayout {
         let dashed: Bool
         let isBackbone: Bool
         let secondary: Bool   // merged twin's USB2 stub
+        let video: Bool       // link carries tunneled video (DP) / DisplayLink
     }
 
     private(set) var positions: [UInt64: CGPoint] = [:]
@@ -142,7 +143,8 @@ struct TreeLayout {
                     bps: child.linkSpeedBps,
                     dashed: child.tier == .usb1,
                     isBackbone: node.kind == .system,
-                    secondary: child.twin != nil
+                    secondary: child.twin != nil,
+                    video: child.carriesVideo
                 ))
                 buildEdges(child)
             }

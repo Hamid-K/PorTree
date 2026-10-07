@@ -9,7 +9,7 @@ struct DiagnosticsView: View {
 
     private var sorted: [Doctor.Issue] {
         store.issues.all.sorted {
-            ($0.severity == .problem ? 0 : 1, $0.title) < ($1.severity == .problem ? 0 : 1, $1.title)
+            $0.severity == $1.severity ? $0.title < $1.title : $0.severity > $1.severity
         }
     }
 
@@ -59,7 +59,7 @@ struct DiagnosticsView: View {
         guard let snapshot = store.snapshot else { return "" }
         return "Checked \(snapshot.deviceCount) devices across \(snapshot.usbRoots.count) USB controllers, "
             + "\(snapshot.tbRoots.count) TB/USB4 domains and \(snapshot.pciRoots.count) PCIe roots.\n"
-            + "Rules: throttling · rated speed · power budget · hub depth · TT contention"
+            + "Rules: throttling · bottlenecked hubs · rated speed · power budget & near-limit · overcurrent · port errors · hub depth · TT contention · TB down-training"
     }
 }
 
@@ -72,9 +72,8 @@ private struct IssueRow: View {
             store.jump(to: issue.nodeID)
         } label: {
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: issue.severity == .problem
-                      ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(issue.severity == .problem ? Color.red : Color.orange)
+                Image(systemName: symbol)
+                    .foregroundStyle(color)
                     .font(.system(size: 13))
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
@@ -98,11 +97,24 @@ private struct IssueRow: View {
             }
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                (issue.severity == .problem ? Color.red : Color.orange).opacity(0.07),
-                in: RoundedRectangle(cornerRadius: 8)
-            )
+            .background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+    }
+
+    private var color: Color {
+        switch issue.severity {
+        case .problem: return .red
+        case .warning: return .orange
+        case .info: return .secondary
+        }
+    }
+
+    private var symbol: String {
+        switch issue.severity {
+        case .problem: return "exclamationmark.octagon.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .info: return "info.circle.fill"
+        }
     }
 }

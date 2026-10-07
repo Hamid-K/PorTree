@@ -83,21 +83,21 @@ private struct DecodedTab: View {
             if let nodeIssues = store.issues.byNode[node.id], !nodeIssues.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(nodeIssues) { issue in
+                        let color: Color = issue.severity == .problem ? .red
+                            : (issue.severity == .warning ? .orange : .secondary)
+                        let symbol = issue.severity == .problem ? "exclamationmark.octagon.fill"
+                            : (issue.severity == .warning ? "exclamationmark.triangle.fill" : "info.circle.fill")
                         VStack(alignment: .leading, spacing: 2) {
-                            Label(issue.title, systemImage: issue.severity == .problem
-                                  ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill")
+                            Label(issue.title, systemImage: symbol)
                                 .font(.system(size: 11.5, weight: .semibold))
-                                .foregroundStyle(issue.severity == .problem ? Color.red : Color.orange)
+                                .foregroundStyle(color)
                             Text(issue.detail)
                                 .font(.system(size: 10.5))
                                 .foregroundStyle(.secondary)
                         }
                         .padding(8)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            (issue.severity == .problem ? Color.red : Color.orange).opacity(0.08),
-                            in: RoundedRectangle(cornerRadius: 7)
-                        )
+                        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
                     }
                 }
             }

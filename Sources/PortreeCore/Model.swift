@@ -4,10 +4,10 @@ public enum NodeKind: String, Sendable, Codable, Hashable {
     case usbController, usbDevice, tbDomain, tbSwitch, pciDevice, system
 }
 
-/// Broad device category driving the icon; orthogonal to `Tier` (color).
+/// Device family driving the icon; orthogonal to `Tier` (color).
 public enum DeviceCategory: String, Sendable, Codable, Hashable {
-    case controller, hub, hid, storage, audio, video, network, display
-    case tbSwitch, tbDomain, adapter, vendor, unknown, pci, system
+    case controller, hub, hid, mouse, storage, audio, speaker, video, network, display
+    case printer, smartCard, wireless, tbSwitch, tbDomain, adapter, vendor, unknown, pci, system
 }
 
 /// A secondary detail row under a node: a USB interface, or a Thunderbolt
@@ -102,6 +102,13 @@ extension DeviceNode {
     public var deviceClassCode: Int64? { properties["bDeviceClass"]?.intValue }
     public var isHub: Bool { deviceClassCode == 9 }
 
+    /// Carrying video: a TB switch with active DP adapters (reserved fabric
+    /// bandwidth) or a DisplayLink device (video over plain USB data — the
+    /// opposite trade-off, worth telling apart).
+    public var videoTunnelCount: Int64 { properties["Portree DPTunnels"]?.intValue ?? 0 }
+    public var isDisplayLink: Bool { vendorID == 0x17E9 }
+    public var carriesVideo: Bool { videoTunnelCount > 0 || isDisplayLink }
+
     public var containerIDKey: String? {
         guard let v = properties["kUSBContainerID"] else { return nil }
         switch v {
@@ -164,11 +171,25 @@ public struct Snapshot: Sendable, Codable {
     /// never diverge on what they capture.
     public static func capture() -> Snapshot {
         let tbRoots = TBTopologyBuilder.build()
+        var system = SystemInfo.node()
+        // Measured fabric capability straight from the registry (vs the
+        // reference-table specs, which are per chip family).
+        let capability = tbRoots.map(\.speedLabel).filter { !$0.isEmpty }.max()
+        if let capability {
+            var props = system.properties
+            props["Measured: Thunderbolt"] = .string("\(capability) · \(tbRoots.count) domain\(tbRoots.count == 1 ? "" : "s")")
+            system = DeviceNode(
+                id: system.id, kind: system.kind, name: system.name, subtitle: system.subtitle,
+                className: system.className, category: system.category, tier: system.tier,
+                speedLabel: system.speedLabel, linkSpeedBps: system.linkSpeedBps,
+                properties: props
+            )
+        }
         return Snapshot(
             usbRoots: USBTopologyBuilder.build(),
             tbRoots: tbRoots,
             pciRoots: PCITopologyBuilder.build(tbRoots: tbRoots),
-            systemNode: SystemInfo.node()
+            systemNode: system
         )
     }
 
