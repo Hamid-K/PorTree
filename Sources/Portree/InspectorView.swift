@@ -353,21 +353,24 @@ struct LiveNodePanel: View {
                     Text("I/O: no byte counters for this device (storage/network only)")
                         .font(.system(size: 9.5)).foregroundStyle(.tertiary)
                 }
-                if let powerHistory = store.powerSeries[node.id], !powerHistory.isEmpty {
-                    HStack {
-                        Text("POWER (allocation)").font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
-                        Spacer()
-                        Text("\(store.currentPowerMA[node.id] ?? Int64(powerHistory.last ?? 0)) mA / 3000")
-                            .font(.system(size: 9.5, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
-                    Sparkline(samples: Array(powerHistory.suffix(120)), color: .mint)
+            }
+            // Power block — always self-labeled, whether or not recording.
+            if node.powerSinkMA != nil || store.powerSeries[node.id] != nil {
+                let currentMA = store.currentPowerMA[node.id] ?? node.powerSinkMA ?? 0
+                HStack {
+                    Text("POWER · negotiated allocation")
+                        .font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+                    Spacer()
+                    Text("\(currentMA) / 3000 mA port limit · \(currentMA * 100 / 3000)%")
+                        .font(.system(size: 9.5, design: .monospaced))
+                        .foregroundStyle(currentMA > 2400 ? .orange : .secondary)
+                }
+                if store.isRecording, let history = store.powerSeries[node.id], !history.isEmpty {
+                    Sparkline(samples: history, color: .mint, capacity: 120)
                         .frame(height: 16)
                 }
-            }
-            if let power = node.powerSinkMA {
-                ProgressView(value: min(1.0, Double(power) / 3000.0))
-                    .tint(power > 2400 ? .orange : .mint)
+                ProgressView(value: min(1.0, Double(currentMA) / 3000.0))
+                    .tint(currentMA > 2400 ? .orange : .mint)
             }
         }
     }
