@@ -82,14 +82,24 @@ public enum Doctor {
                     }
                 }
 
-                if node.isHub && hubDepth >= tierLimit {
-                    issues.append(Issue(
-                        kind: .deepChain,
-                        severity: .warning,
-                        nodeID: node.id,
-                        title: "Hub chain at tier limit",
-                        detail: "This hub sits at tier \(hubDepth) of \(tierLimit) (UsbHostControllerTierLimit). Devices behind it may fail to enumerate."
-                    ))
+                if node.isHub {
+                    if hubDepth >= tierLimit {
+                        issues.append(Issue(
+                            kind: .deepChain,
+                            severity: .problem,
+                            nodeID: node.id,
+                            title: "Hub chain at tier limit",
+                            detail: "This hub sits at tier \(hubDepth) of \(tierLimit) (UsbHostControllerTierLimit). Devices behind it may fail to enumerate."
+                        ))
+                    } else if hubDepth == tierLimit - 1 {
+                        issues.append(Issue(
+                            kind: .deepChain,
+                            severity: .warning,
+                            nodeID: node.id,
+                            title: "Deep hub chain",
+                            detail: "Tier \(hubDepth) of \(tierLimit) — one more hub level below this point will hit the controller's tier limit and fail to enumerate."
+                        ))
+                    }
                 }
 
                 // USB2 transaction-translator contention: a single-TT hub

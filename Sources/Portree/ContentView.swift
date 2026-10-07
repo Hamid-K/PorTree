@@ -3,6 +3,7 @@ import PortreeCore
 
 struct ContentView: View {
     @Environment(AppStore.self) private var store
+    @State private var diagnosticsShown = false
 
     var body: some View {
         @Bindable var store = store
@@ -58,6 +59,29 @@ struct ContentView: View {
                     Image(systemName: "gauge.with.dots.needle.33percent")
                 }
                 .help("Bandwidth overlay (allocated share)")
+
+                Button {
+                    diagnosticsShown.toggle()
+                } label: {
+                    Image(systemName: "stethoscope")
+                        .overlay(alignment: .topTrailing) {
+                            let count = store.issues.all.count
+                            if count > 0 {
+                                Text("\(count)")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 3.5)
+                                    .padding(.vertical, 0.5)
+                                    .background(
+                                        store.issues.all.contains { $0.severity == .problem } ? Color.red : Color.orange,
+                                        in: Capsule()
+                                    )
+                                    .offset(x: 8, y: -7)
+                            }
+                        }
+                }
+                .help("Diagnostics — auto-run on every change")
+                .popover(isPresented: $diagnosticsShown, arrowEdge: .bottom) { DiagnosticsView() }
 
                 Button {
                     store.toolboxShown = true
