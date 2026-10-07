@@ -591,12 +591,12 @@ private struct NodeCard: View {
             VStack(spacing: 1) {
                 if store.isRecording, store.powerOverlay,
                    let power = store.powerSeries[node.id], power.contains(where: { $0 > 0 }) {
-                    Sparkline(samples: Array(power.suffix(60)), color: .mint)
+                    Sparkline(samples: power, color: .mint, capacity: 60, tick: store.sampleCount)
                         .frame(height: 8)
                         .opacity(0.6)
                 }
                 if store.isRecording, let samples = store.series[node.id], samples.contains(where: { $0 > 0 }) {
-                    Sparkline(samples: Array(samples.suffix(60)), color: node.tier.color)
+                    Sparkline(samples: samples, color: node.tier.color, capacity: 60, tick: store.sampleCount)
                         .frame(height: 13)
                         .opacity(0.55)
                 }
@@ -855,105 +855,59 @@ struct FlowLayout: Layout {
     }
 }
 
-/// [Double] as an animatable vector so chart paths MORPH between samples
-/// instead of jumping. Unequal lengths are zero-padded so interpolation never
-/// crashes while a ring buffer is still filling.
-struct AnimatableVector: VectorArithmetic {
-    var values: [Double]
-
-    static var zero: AnimatableVector { AnimatableVector(values: []) }
-
-    static func + (a: AnimatableVector, b: AnimatableVector) -> AnimatableVector {
-        combine(a, b, +)
-    }
-
-    static func - (a: AnimatableVector, b: AnimatableVector) -> AnimatableVector {
-        combine(a, b, -)
-    }
-
-    private static func combine(_ a: AnimatableVector, _ b: AnimatableVector, _ op: (Double, Double) -> Double) -> AnimatableVector {
-        let count = max(a.values.count, b.values.count)
-        var out = [Double](repeating: 0, count: count)
-        for index in 0..<count {
-            let left = index < a.values.count ? a.values[index] : 0
-            let right = index < b.values.count ? b.values[index] : 0
-            out[index] = op(left, right)
-        }
-        return AnimatableVector(values: out)
-    }
-
-    mutating func scale(by rhs: Double) {
-        for index in values.indices { values[index] *= rhs }
-    }
-
-    var magnitudeSquared: Double {
-        values.reduce(0) { $0 + $1 * $1 }
-    }
-}
-
-private struct LiveChartShape: Shape {
-    var vector: AnimatableVector
-    var closed: Bool   // area fill variant closes down to the baseline
-
-    var animatableData: AnimatableVector {
-        get { vector }
-        set { vector = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let values = vector.values
-        guard values.count > 1 else { return path }
-        let peak = max(values.max() ?? 1, 1)
-        let stepX = rect.width / CGFloat(values.count - 1)
-        func point(_ index: Int) -> CGPoint {
-            CGPoint(
-                x: rect.minX + CGFloat(index) * stepX,
-                y: rect.minY + rect.height * (1 - CGFloat(values[index] / peak))
-            )
-        }
-        if closed { path.move(to: CGPoint(x: rect.minX, y: rect.maxY)) }
-        for index in values.indices {
-            if index == 0 && !closed { path.move(to: point(0)) } else { path.addLine(to: point(index)) }
-        }
-        if closed {
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-            path.closeSubpath()
-        }
-        return path
-    }
-}
-
-/// Animated line chart with a soft gradient fill — the ring is padded to a
-/// constant length so each new sample morphs the path smoothly (≈1 s linear,
-/// matching the sampling tick) instead of snapping.
+/// Scrolling live chart that TRANSLATES instead of morphing: every sample is
+/// drawn at an absolute x keyed to the global tick, and only a horizontal
+/// offset animates each second — history pixels stay rigid while the strip
+/// slides left and the newest point enters from the right edge. (The earlier
+/// index-space interpolation made old data visibly undulate.)
 struct Sparkline: View {
     let samples: [Double]
     let color: Color
     var capacity: Int = 120
     var filled: Bool = true
     var lineWidth: CGFloat = 1.4
-
-    private var padded: [Double] {
-        let tail = Array(samples.suffix(capacity))
-        return Array(repeating: 0, count: max(0, capacity - tail.count)) + tail
-    }
+    /// Monotonic sample counter (store.sampleCount): drives the scroll.
+    var tick: Int = 0
 
     var body: some View {
-        let vector = AnimatableVector(values: padded)
-        ZStack {
-            if filled {
-                LiveChartShape(vector: vector, closed: true)
+        GeometryReader { geo in
+            let window = Array(samples.suffix(capacity))
+            let stepX = geo.size.width / CGFloat(max(capacity - 1, 1))
+            let peak = max(window.max() ?? 1, 1)
+            let count = window.count
+            // Absolute x of window[j]: its global tick index × stepX.
+            func x(_ j: Int) -> CGFloat {
+                CGFloat(tick - (count - 1 - j)) * stepX
+            }
+            func y(_ j: Int) -> CGFloat {
+                geo.size.height * (1 - CGFloat(window[j] / peak))
+            }
+
+            ZStack {
+                if filled, count > 1 {
+                    Path { path in
+                        path.move(to: CGPoint(x: x(0), y: geo.size.height))
+                        for j in 0..<count { path.addLine(to: CGPoint(x: x(j), y: y(j))) }
+                        path.addLine(to: CGPoint(x: x(count - 1), y: geo.size.height))
+                        path.closeSubpath()
+                    }
                     .fill(LinearGradient(
                         colors: [color.opacity(0.32), color.opacity(0.02)],
                         startPoint: .top, endPoint: .bottom
                     ))
+                }
+                if count > 1 {
+                    Path { path in
+                        path.move(to: CGPoint(x: x(0), y: y(0)))
+                        for j in 1..<count { path.addLine(to: CGPoint(x: x(j), y: y(j))) }
+                    }
+                    .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+                }
             }
-            LiveChartShape(vector: vector, closed: false)
-                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+            .offset(x: geo.size.width - stepX - CGFloat(tick) * stepX)
+            .animation(.linear(duration: 1.0), value: tick)
         }
-        .animation(.linear(duration: 0.95), value: padded)
-        .drawingGroup()
+        .clipped()
     }
 }
 

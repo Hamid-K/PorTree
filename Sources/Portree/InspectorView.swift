@@ -347,7 +347,7 @@ struct LiveNodePanel: View {
                             .appFont(9.5, design: .monospaced)
                             .foregroundStyle(.secondary)
                     }
-                    Sparkline(samples: Array(samples.suffix(120)), color: node.tier.color)
+                    Sparkline(samples: samples, color: node.tier.color, capacity: 120, tick: store.sampleCount)
                         .frame(height: 26)
                 } else {
                     Text("I/O: no byte counters for this device (storage/network only)")
@@ -366,7 +366,7 @@ struct LiveNodePanel: View {
                         .foregroundStyle(currentMA > 2400 ? .orange : .secondary)
                 }
                 if store.isRecording, let history = store.powerSeries[node.id], !history.isEmpty {
-                    Sparkline(samples: history, color: .mint, capacity: 120)
+                    Sparkline(samples: history, color: .mint, capacity: 120, tick: store.sampleCount)
                         .frame(height: 16)
                 }
                 ProgressView(value: min(1.0, Double(currentMA) / 3000.0))
@@ -408,7 +408,7 @@ private struct BandwidthTab: View {
                             stat("Link", Format.speedLabel(bps: node.linkSpeedBps), node.tier.color)
                         }
                     }
-                    Sparkline(samples: Array(samples.suffix(300)), color: node.tier.color)
+                    Sparkline(samples: samples, color: node.tier.color, capacity: 300, tick: store.sampleCount)
                         .frame(height: 70)
                         .padding(8)
                         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))

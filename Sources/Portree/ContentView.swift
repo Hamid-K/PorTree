@@ -186,7 +186,7 @@ private struct TrafficStripView: View {
             }
             .frame(width: 168, alignment: .leading)
 
-            Sparkline(samples: store.totalSeries, color: .green, capacity: 150, lineWidth: 1.6)
+            Sparkline(samples: store.totalSeries, color: .green, capacity: 150, lineWidth: 1.6, tick: store.sampleCount)
                 .frame(maxWidth: .infinity, maxHeight: 34)
 
             VStack(alignment: .trailing, spacing: 1) {
