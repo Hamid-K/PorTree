@@ -35,6 +35,23 @@ final class AppStore {
     var logPaused = false
     var zoom: CGFloat = 1.0
     var pendingScrollTarget: UInt64?
+    var toolboxShown = false
+    /// Bandwidth overlay (allocated share + live rates) — OFF by default.
+    var bandwidthOverlay = false
+    var orientation: LayoutOrientation = .leftToRight
+    /// Graph pan offset in viewport points (content is scaled by `zoom`).
+    var panOffset: CGSize = CGSize(width: 24, height: 24)
+    /// Last known graph viewport, for fit/zoom-around-center math.
+    var lastViewport: CGSize = .zero
+
+    // MARK: Record mode (live throughput; real counters only)
+    private(set) var isRecording = false
+    private(set) var recordingStart: Date?
+    private(set) var rates: [UInt64: Double] = [:]      // bytes/sec, current
+    private(set) var series: [UInt64: [Double]] = [:]   // ring, 300 samples
+    private(set) var totalSeries: [Double] = []         // aggregate, for the traffic strip
+    private(set) var sampleCount = 0
+    private var sampler: BandwidthSampler?
 
     private var monitor: HotplugMonitor?
     private let logWriter = EventLogWriter()
@@ -162,6 +179,123 @@ final class AppStore {
 
     var tbDisplayRoots: [DeviceNode] {
         displayRoots.filter { $0.kind == .tbDomain }
+    }
+
+    var pciDisplayRoots: [DeviceNode] {
+        displayRoots.filter { $0.kind == .pciDevice }
+    }
+
+    var systemDisplayNode: DeviceNode? {
+        displayRoots.first { $0.kind == .system }
+    }
+
+    // MARK: Record mode
+
+    func toggleRecording() {
+        if isRecording { stopRecording() } else { startRecording() }
+    }
+
+    private func startRecording() {
+        isRecording = true
+        recordingStart = Date()
+        sampleCount = 0
+        if sampler == nil {
+            sampler = BandwidthSampler { rates, date in
+                Task { @MainActor in AppStore.shared.ingest(rates: rates, at: date) }
+            }
+        }
+        sampler?.start()
+        if !bandwidthOverlay { bandwidthOverlay = true }
+        appendEvent(EventRow(kind: .info, title: "Recording started", detail: "sampling real byte counters at 1 Hz"))
+    }
+
+    private func stopRecording() {
+        isRecording = false
+        sampler?.stop()
+        rates = [:]
+        appendEvent(EventRow(
+            kind: .info,
+            title: "Recording stopped",
+            detail: "\(sampleCount) samples · series kept for inspection"
+        ))
+    }
+
+    private func ingest(rates newRates: [UInt64: Double], at date: Date) {
+        guard isRecording else { return }
+        sampleCount += 1
+        rates = newRates
+        totalSeries.append(newRates.values.reduce(0, +))
+        if totalSeries.count > 300 { totalSeries.removeFirst(totalSeries.count - 300) }
+        // Every node with an active series gets a sample each tick (0 when
+        // idle), so sparklines stay time-aligned.
+        var updatedIDs = Set(series.keys)
+        updatedIDs.formUnion(newRates.keys)
+        for id in updatedIDs {
+            var ring = series[id] ?? []
+            ring.append(newRates[id] ?? 0)
+            if ring.count > 300 { ring.removeFirst(ring.count - 300) }
+            series[id] = ring
+        }
+    }
+
+    /// Allocated share: this link's negotiated speed vs its parent link's —
+    /// the registry-truth layer of the bandwidth overlay.
+    func allocatedShare(of node: DeviceNode) -> Double? {
+        guard node.linkSpeedBps > 0,
+              let parentID = parentOf[node.id],
+              let parent = allNodes[parentID],
+              parent.linkSpeedBps > 0 else { return nil }
+        return min(1.0, Double(node.linkSpeedBps) / Double(parent.linkSpeedBps))
+    }
+
+    /// Live utilization of a node's own link while recording.
+    func utilization(of node: DeviceNode) -> Double? {
+        guard isRecording, node.linkSpeedBps > 0, let rate = rates[node.id], rate > 0 else { return nil }
+        return min(1.0, rate * 8 / Double(node.linkSpeedBps))
+    }
+
+    /// Busiest devices right now, for the traffic strip.
+    var topTalkers: [(name: String, rate: Double, id: UInt64)] {
+        rates.filter { $0.value > 1024 }
+            .sorted { $0.value > $1.value }
+            .prefix(3)
+            .compactMap { id, rate in allNodes[id].map { ($0.name, rate, id) } }
+    }
+
+    // MARK: Graph viewport
+
+    func zoomAround(factor: CGFloat, anchor: CGPoint? = nil) {
+        let oldZoom = zoom
+        let newZoom = min(2.0, max(0.2, oldZoom * factor))
+        guard newZoom != oldZoom else { return }
+        let pivot = anchor ?? CGPoint(x: lastViewport.width / 2, y: lastViewport.height / 2)
+        // Keep the content point under `pivot` stationary while zooming.
+        panOffset = CGSize(
+            width: pivot.x - (pivot.x - panOffset.width) * (newZoom / oldZoom),
+            height: pivot.y - (pivot.y - panOffset.height) * (newZoom / oldZoom)
+        )
+        zoom = newZoom
+    }
+
+    func fitGraph(contentSize: CGSize) {
+        guard lastViewport.width > 50, contentSize.width > 0 else { return }
+        let fitted = min(
+            1.0,
+            (lastViewport.width - 48) / contentSize.width,
+            (lastViewport.height - 48) / contentSize.height
+        )
+        zoom = max(0.2, fitted)
+        panOffset = CGSize(
+            width: max(16, (lastViewport.width - contentSize.width * zoom) / 2),
+            height: max(16, (lastViewport.height - contentSize.height * zoom) / 2)
+        )
+    }
+
+    func centerGraph(on point: CGPoint) {
+        panOffset = CGSize(
+            width: lastViewport.width / 2 - point.x * zoom,
+            height: lastViewport.height / 2 - point.y * zoom
+        )
     }
 
     // MARK: Events

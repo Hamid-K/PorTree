@@ -53,6 +53,10 @@ struct PortreeApp: App {
                     .keyboardShortcut("r")
                 Button("Export Snapshot as JSON") { AppStore.shared.exportSnapshot() }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
+                Button("Toolbox") { AppStore.shared.toolboxShown.toggle() }
+                    .keyboardShortcut("t")
+                Button("Record Throughput") { AppStore.shared.toggleRecording() }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
                 Divider()
                 Button("Expand All") { AppStore.shared.expandAll() }
                     .keyboardShortcut(.rightArrow, modifiers: [.command, .option])

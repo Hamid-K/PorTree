@@ -46,6 +46,8 @@ extension DeviceCategory {
         case .adapter: return "cable.connector"
         case .vendor: return "shippingbox"
         case .unknown: return "questionmark.square.dashed"
+        case .pci: return "memorychip"
+        case .system: return "laptopcomputer"
         }
     }
 }
@@ -70,5 +72,26 @@ enum Theme {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
         return formatter.string(from: date)
+    }
+
+    /// Protocol-stack badge for top-level sections (corner chip + backbone
+    /// edge color): USB blue, Thunderbolt indigo, PCIe teal.
+    static func protocolBadge(for kind: PortreeCore.NodeKind) -> (label: String, color: Color)? {
+        switch kind {
+        case .usbController: return ("USB", .blue)
+        case .tbDomain: return ("TB/USB4", .indigo)
+        case .pciDevice: return ("PCIe", .teal)
+        default: return nil
+        }
+    }
+
+    /// Live throughput label (bytes/sec, binary-ish steps kept human).
+    static func rate(_ bytesPerSec: Double) -> String {
+        switch bytesPerSec {
+        case ..<1_000: return String(format: "%.0f B/s", bytesPerSec)
+        case ..<1_000_000: return String(format: "%.1f KB/s", bytesPerSec / 1_000)
+        case ..<1_000_000_000: return String(format: "%.1f MB/s", bytesPerSec / 1_000_000)
+        default: return String(format: "%.2f GB/s", bytesPerSec / 1_000_000_000)
+        }
     }
 }

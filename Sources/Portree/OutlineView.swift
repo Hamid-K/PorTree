@@ -13,6 +13,11 @@ struct OutlineView: View {
         let search = store.searchResult
 
         List(selection: $store.selection) {
+            if let system = store.systemDisplayNode {
+                Section("System") {
+                    OutlineNodeRow(node: { var s = system; s.children = []; return s }(), search: search)
+                }
+            }
             Section("USB") {
                 ForEach(filteredRoots(store.usbDisplayRoots, search: search)) { root in
                     OutlineNodeRow(node: root, search: search)
@@ -21,6 +26,13 @@ struct OutlineView: View {
             Section("Thunderbolt / USB4") {
                 ForEach(filteredRoots(store.tbDisplayRoots, search: search)) { root in
                     OutlineNodeRow(node: root, search: search)
+                }
+            }
+            if !store.pciDisplayRoots.isEmpty {
+                Section("PCIe") {
+                    ForEach(filteredRoots(store.pciDisplayRoots, search: search)) { root in
+                        OutlineNodeRow(node: root, search: search)
+                    }
                 }
             }
         }

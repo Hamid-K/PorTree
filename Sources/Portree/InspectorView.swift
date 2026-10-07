@@ -15,6 +15,7 @@ struct InspectorView: View {
         case raw = "Raw"
         case interfaces = "Interfaces"
         case history = "History"
+        case bandwidth = "I/O"
     }
 
     var body: some View {
@@ -35,6 +36,7 @@ struct InspectorView: View {
                     case .raw: RawTab(node: node, hexPayload: $hexPayload)
                     case .interfaces: InterfacesTab(node: node)
                     case .history: HistoryTab(node: node)
+                    case .bandwidth: BandwidthTab(node: node)
                     }
                 }
             }
@@ -284,6 +286,74 @@ private struct InterfacesTab: View {
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 16)
+    }
+}
+
+// MARK: - Bandwidth (record mode)
+
+private struct BandwidthTab: View {
+    @Environment(AppStore.self) private var store
+    let node: DeviceNode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let share = store.allocatedShare(of: node) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("ALLOCATED (registry truth)")
+                        .font(.system(size: 9.5, weight: .bold)).foregroundStyle(.tertiary)
+                    Text("Negotiated \(node.speedLabel) — \(Int(share * 100))% of the upstream link")
+                        .font(.system(size: 11.5))
+                    ProgressView(value: share)
+                        .tint(node.tier.color)
+                }
+            }
+
+            if let samples = store.series[node.id], samples.contains(where: { $0 > 0 }) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("LIVE THROUGHPUT (recorded)")
+                        .font(.system(size: 9.5, weight: .bold)).foregroundStyle(.tertiary)
+                    let current = store.rates[node.id] ?? 0
+                    let peak = samples.max() ?? 0
+                    HStack(spacing: 12) {
+                        stat("Now", Theme.rate(current), .green)
+                        stat("Peak", Theme.rate(peak), .orange)
+                        if node.linkSpeedBps > 0 {
+                            stat("Link", Format.speedLabel(bps: node.linkSpeedBps), node.tier.color)
+                        }
+                    }
+                    Sparkline(samples: Array(samples.suffix(300)), color: node.tier.color)
+                        .frame(height: 70)
+                        .padding(8)
+                        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+                    if node.linkSpeedBps > 0, peak > 0 {
+                        Text("Peak used \(String(format: "%.1f", min(100, peak * 8 / Double(node.linkSpeedBps) * 100)))% of the negotiated link.")
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                VStack(spacing: 6) {
+                    Image(systemName: store.isRecording ? "waveform.badge.magnifyingglass" : "record.circle")
+                        .font(.system(size: 22)).foregroundStyle(.tertiary)
+                    Text(store.isRecording
+                         ? "Recording — no byte counters for this device.\nOnly storage and network devices expose real counters; nothing is estimated."
+                         : "Start record mode (toolbar ⏺) to sample real byte counters at 1 Hz.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 16)
+    }
+
+    private func stat(_ label: String, _ value: String, _ color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label).font(.system(size: 9)).foregroundStyle(.tertiary)
+            Text(value).font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(color)
+        }
     }
 }
 

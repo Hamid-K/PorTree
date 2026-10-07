@@ -1,13 +1,13 @@
 import Foundation
 
 public enum NodeKind: String, Sendable, Codable, Hashable {
-    case usbController, usbDevice, tbDomain, tbSwitch
+    case usbController, usbDevice, tbDomain, tbSwitch, pciDevice, system
 }
 
 /// Broad device category driving the icon; orthogonal to `Tier` (color).
 public enum DeviceCategory: String, Sendable, Codable, Hashable {
     case controller, hub, hid, storage, audio, video, network, display
-    case tbSwitch, tbDomain, adapter, vendor, unknown
+    case tbSwitch, tbDomain, adapter, vendor, unknown, pci, system
 }
 
 /// A secondary detail row under a node: a USB interface, or a Thunderbolt
@@ -138,15 +138,27 @@ extension DeviceNode {
 public struct Snapshot: Sendable, Codable {
     public let usbRoots: [DeviceNode]
     public let tbRoots: [DeviceNode]
+    public let pciRoots: [DeviceNode]
+    public let systemNode: DeviceNode?
     public let takenAt: Date
 
-    public init(usbRoots: [DeviceNode], tbRoots: [DeviceNode], takenAt: Date = Date()) {
+    public init(
+        usbRoots: [DeviceNode],
+        tbRoots: [DeviceNode],
+        pciRoots: [DeviceNode] = [],
+        systemNode: DeviceNode? = nil,
+        takenAt: Date = Date()
+    ) {
         self.usbRoots = usbRoots
         self.tbRoots = tbRoots
+        self.pciRoots = pciRoots
+        self.systemNode = systemNode
         self.takenAt = takenAt
     }
 
-    public var allRoots: [DeviceNode] { usbRoots + tbRoots }
+    public var allRoots: [DeviceNode] {
+        (systemNode.map { [$0] } ?? []) + usbRoots + tbRoots + pciRoots
+    }
 
     public func allByID() -> [UInt64: DeviceNode] {
         var out: [UInt64: DeviceNode] = [:]

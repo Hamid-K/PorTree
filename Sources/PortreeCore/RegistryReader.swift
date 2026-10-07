@@ -61,6 +61,28 @@ public enum Registry {
         IOObjectConformsTo(entry, className) != 0
     }
 
+    /// Entry ID of the nearest IOService-plane ancestor conforming to any of
+    /// `classNames` — e.g. the IOUSBHostDevice above an IOBlockStorageDriver,
+    /// which is how live byte counters map back onto tree nodes.
+    public static func ancestorID(of entry: io_object_t, conformingToAny classNames: [String], maxDepth: Int = 16) -> UInt64? {
+        var current: io_registry_entry_t = entry
+        var retained = false
+        defer { if retained { IOObjectRelease(current) } }
+        for _ in 0..<maxDepth {
+            var parent: io_registry_entry_t = 0
+            guard IORegistryEntryGetParentEntry(current, "IOService", &parent) == KERN_SUCCESS, parent != 0 else {
+                return nil
+            }
+            if retained { IOObjectRelease(current) }
+            current = parent
+            retained = true
+            if classNames.contains(where: { conforms(current, to: $0) }) {
+                return entryID(of: current)
+            }
+        }
+        return nil
+    }
+
     /// All services matching a class (base-class matching: concrete
     /// Thunderbolt classes vary per device). Caller releases each.
     public static func matchingServices(_ className: String) -> [io_object_t] {

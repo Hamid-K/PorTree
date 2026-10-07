@@ -1,32 +1,44 @@
 import SwiftUI
+import AppKit
 import PortreeCore
 
-/// The hierarchy chart: elbow connectors colored by protocol tier and
-/// weighted by speed, node cards with class icons, foldable subtrees with
-/// "+N" pills, pan (scroll) and zoom (pinch / ⌘±).
+/// The hierarchy chart. Interaction model:
+///  - drag anywhere to pan; two-finger scroll pans too
+///  - pinch, ⌘+scroll-wheel, or toolbar/⌘± to zoom (anchored at the cursor)
+///  - click a card to select; the +N pill folds a subtree
+/// The System/SoC card is the root; backbone links fan out to USB / TB / PCIe.
 struct GraphView: View {
     @Environment(AppStore.self) private var store
-    @State private var gestureZoom: CGFloat = 1.0
+    @State private var dragStart: CGSize?
 
     var body: some View {
         let layout = TreeLayout(
+            systemRoot: store.systemDisplayNode,
             usbRoots: store.usbDisplayRoots,
             tbRoots: store.tbDisplayRoots,
-            collapsed: store.collapsed
+            pciRoots: store.pciDisplayRoots,
+            collapsed: store.collapsed,
+            orientation: store.orientation
         )
-        let zoom = store.zoom * gestureZoom
         let search = store.searchResult
 
-        ScrollViewReader { proxy in
-            ScrollView([.horizontal, .vertical]) {
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                Color(nsColor: .underPageBackgroundColor)
+
                 ZStack(alignment: .topLeading) {
-                    EdgeCanvas(
-                        edges: layout.edges,
-                        dimmed: search.map { s in
-                            Set(layout.edges.filter { !s.visible.contains($0.childID) }.map(\.id))
-                        } ?? [],
-                        flagged: store.issues.flaggedEdges
-                    )
+                    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !store.isRecording)) { timeline in
+                        EdgeCanvas(
+                            edges: layout.edges,
+                            horizontal: layout.orientation == .leftToRight,
+                            dimmed: search.map { s in
+                                Set(layout.edges.filter { !s.visible.contains($0.childID) }.map(\.id))
+                            } ?? [],
+                            flagged: store.issues.flaggedEdges,
+                            flow: store.isRecording ? store.rates : [:],
+                            time: timeline.date.timeIntervalSinceReferenceDate
+                        )
+                    }
 
                     ForEach(layout.visibleNodes) { node in
                         let position = layout.positions[node.id] ?? .zero
@@ -45,77 +57,188 @@ struct GraphView: View {
                             x: position.x + TreeLayout.nodeWidth / 2,
                             y: position.y + TreeLayout.nodeHeight / 2
                         )
-                        .id(node.id)
                     }
                 }
-                .frame(width: layout.size.width, height: layout.size.height)
-                .scaleEffect(zoom, anchor: .topLeading)
-                .frame(
-                    width: layout.size.width * zoom,
-                    height: layout.size.height * zoom,
-                    alignment: .topLeading
-                )
+                .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
+                .scaleEffect(store.zoom, anchor: .topLeading)
+                .offset(store.panOffset)
             }
-            .background(Color(nsColor: .underPageBackgroundColor))
+            .clipped()
+            .contentShape(Rectangle())
             .gesture(
-                MagnifyGesture()
-                    .onChanged { value in gestureZoom = value.magnification }
-                    .onEnded { value in
-                        store.zoom = min(2.0, max(0.25, store.zoom * value.magnification))
-                        gestureZoom = 1.0
+                DragGesture(minimumDistance: 3)
+                    .onChanged { value in
+                        if dragStart == nil { dragStart = store.panOffset }
+                        store.panOffset = CGSize(
+                            width: (dragStart?.width ?? 0) + value.translation.width,
+                            height: (dragStart?.height ?? 0) + value.translation.height
+                        )
                     }
+                    .onEnded { _ in dragStart = nil }
             )
+            .simultaneousGesture(
+                MagnifyGesture()
+                    .onEnded { value in store.zoomAround(factor: value.magnification) }
+            )
+            .background(
+                ScrollWheelCatcher { event in
+                    if event.command {
+                        store.zoomAround(factor: event.deltaY > 0 ? 1.06 : 0.94, anchor: event.location)
+                    } else {
+                        store.panOffset.width += event.deltaX
+                        store.panOffset.height += event.deltaY
+                    }
+                }
+            )
+            .onAppear {
+                store.lastViewport = geo.size
+                if store.panOffset == CGSize(width: 24, height: 24) {
+                    store.fitGraph(contentSize: layout.size)
+                }
+            }
+            .onChange(of: geo.size) { _, newSize in store.lastViewport = newSize }
             .onChange(of: store.pendingScrollTarget) { _, target in
-                guard let target else { return }
-                withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(target, anchor: .center) }
+                guard let target, let position = layout.positions[target] else { return }
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    store.centerGraph(on: CGPoint(
+                        x: position.x + TreeLayout.nodeWidth / 2,
+                        y: position.y + TreeLayout.nodeHeight / 2
+                    ))
+                }
                 store.pendingScrollTarget = nil
+            }
+            .overlay(alignment: .bottomTrailing) {
+                HStack(spacing: 6) {
+                    Button { store.zoomAround(factor: 1 / 1.2) } label: { Image(systemName: "minus.magnifyingglass") }
+                    Button { store.fitGraph(contentSize: layout.size) } label: { Text("Fit") }
+                    Button { store.zoomAround(factor: 1.2) } label: { Image(systemName: "plus.magnifyingglass") }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .padding(10)
             }
         }
     }
 }
 
+// MARK: - Scroll-wheel capture (SwiftUI has no native wheel events on macOS)
+
+struct WheelEvent {
+    let deltaX: CGFloat
+    let deltaY: CGFloat
+    let command: Bool
+    let location: CGPoint
+}
+
+private struct ScrollWheelCatcher: NSViewRepresentable {
+    let onWheel: (WheelEvent) -> Void
+
+    final class WheelView: NSView {
+        var onWheel: ((WheelEvent) -> Void)?
+        override func scrollWheel(with event: NSEvent) {
+            let location = convert(event.locationInWindow, from: nil)
+            onWheel?(WheelEvent(
+                deltaX: event.scrollingDeltaX,
+                deltaY: event.scrollingDeltaY,
+                command: event.modifierFlags.contains(.command),
+                location: CGPoint(x: location.x, y: bounds.height - location.y)
+            ))
+        }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }  // clicks pass through
+    }
+
+    func makeNSView(context: Context) -> WheelView {
+        let view = WheelView()
+        view.onWheel = onWheel
+        return view
+    }
+
+    func updateNSView(_ view: WheelView, context: Context) {
+        view.onWheel = onWheel
+    }
+}
+
+// MARK: - Edges
+
 private struct EdgeCanvas: View {
     let edges: [TreeLayout.Edge]
+    let horizontal: Bool
     let dimmed: Set<String>
     let flagged: Set<UInt64>
+    var flow: [UInt64: Double] = [:]
+    var time: TimeInterval = 0
 
     var body: some View {
         Canvas { context, _ in
             for edge in edges {
-                let midX = (edge.from.x + edge.to.x) / 2
                 var path = Path()
                 path.move(to: edge.from)
-                path.addCurve(
-                    to: edge.to,
-                    control1: CGPoint(x: midX, y: edge.from.y),
-                    control2: CGPoint(x: midX, y: edge.to.y)
-                )
+                if horizontal {
+                    let midX = (edge.from.x + edge.to.x) / 2
+                    path.addCurve(
+                        to: edge.to,
+                        control1: CGPoint(x: midX, y: edge.from.y),
+                        control2: CGPoint(x: midX, y: edge.to.y)
+                    )
+                } else {
+                    let midY = (edge.from.y + edge.to.y) / 2
+                    path.addCurve(
+                        to: edge.to,
+                        control1: CGPoint(x: edge.from.x, y: midY),
+                        control2: CGPoint(x: edge.to.x, y: midY)
+                    )
+                }
                 let opacity = dimmed.contains(edge.id) ? 0.15 : 0.85
+
+                if edge.isBackbone {
+                    // System backbone: soft wide bar + protocol-colored core.
+                    let protocolColor = Theme.protocolBadge(for: edge.childKind)?.color ?? .gray
+                    context.stroke(
+                        path,
+                        with: .color(protocolColor.opacity(opacity * 0.18)),
+                        style: StrokeStyle(lineWidth: 11, lineCap: .round)
+                    )
+                    context.stroke(
+                        path,
+                        with: .color(protocolColor.opacity(opacity * 0.75)),
+                        style: StrokeStyle(lineWidth: 3.5, lineCap: .round)
+                    )
+                    continue
+                }
+
                 // Doctor: the limiting link of a throttled device tints red.
                 let color = flagged.contains(edge.childID) ? Color.red : edge.tier.color
                 var style = StrokeStyle(lineWidth: Theme.edgeWidth(bps: edge.bps), lineCap: .round)
                 if edge.dashed { style.dash = [6, 5] }
                 context.stroke(path, with: .color(color.opacity(opacity)), style: style)
 
-                // Merged hub twin: a thin parallel stub for the USB2 personality.
-                if let secondary = edge.secondary {
-                    var stub = Path()
-                    stub.move(to: CGPoint(x: edge.from.x, y: edge.from.y + 5))
-                    stub.addCurve(
-                        to: CGPoint(x: edge.to.x, y: edge.to.y + 5),
-                        control1: CGPoint(x: midX, y: edge.from.y + 5),
-                        control2: CGPoint(x: midX, y: edge.to.y + 5)
-                    )
+                // Merged hub twin: thin parallel stub for the USB2 personality.
+                if edge.secondary {
+                    let offsetPath = path.offsetBy(dx: horizontal ? 0 : 5, dy: horizontal ? 5 : 0)
                     context.stroke(
-                        stub,
-                        with: .color(secondary.tier.color.opacity(opacity * 0.7)),
+                        offsetPath,
+                        with: .color(Tier.usb2.color.opacity(opacity * 0.6)),
                         style: StrokeStyle(lineWidth: 1.4, lineCap: .round)
                     )
+                }
+
+                // Record mode: animated flow on links carrying live traffic.
+                if let rate = flow[edge.childID], rate > 1024 {
+                    let speed: Double = rate > 50_000_000 ? 160 : (rate > 1_000_000 ? 90 : 40)
+                    let flowStyle = StrokeStyle(
+                        lineWidth: max(1.6, Theme.edgeWidth(bps: edge.bps) * 0.5),
+                        lineCap: .round,
+                        dash: [5, 14],
+                        dashPhase: -CGFloat(time * speed)
+                    )
+                    context.stroke(path, with: .color(.white.opacity(0.85)), style: flowStyle)
                 }
             }
         }
     }
 }
+
+// MARK: - Node card
 
 private struct NodeCard: View {
     @Environment(AppStore.self) private var store
@@ -127,6 +250,12 @@ private struct NodeCard: View {
     let isReenumerated: Bool
     let isDimmed: Bool
     let isMatch: Bool
+
+    private var subtreePowerMA: Int64? {
+        guard node.isHub || node.kind == .usbController else { return node.powerSinkMA }
+        let total = node.flattened().compactMap(\.powerSinkMA).reduce(0, +)
+        return total > 0 ? total : nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -148,7 +277,7 @@ private struct NodeCard: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 2)
-                if !node.children.isEmpty {
+                if !node.children.isEmpty || collapsedCount > 0 {
                     Button {
                         store.toggleCollapsed(node.id)
                     } label: {
@@ -175,9 +304,20 @@ private struct NodeCard: View {
                             color: nodeIssues.contains { $0.severity == .problem } ? .red : .orange
                         )
                     }
+                    if store.isRecording, let rate = store.rates[node.id], rate > 1024 {
+                        CapsuleTag(text: Theme.rate(rate), color: .green)
+                    }
+                    if store.bandwidthOverlay, let share = store.allocatedShare(of: node) {
+                        CapsuleTag(text: "alloc \(Int(share * 100))%", color: .teal)
+                    }
+                    if let power = subtreePowerMA {
+                        CapsuleTag(
+                            text: node.isHub || node.kind == .usbController ? "Σ \(power) mA" : "\(power) mA",
+                            color: .mint
+                        )
+                    }
                     if node.isTunneled { CapsuleTag(text: "⚡ tunnel", color: .indigo) }
-                    if node.twin != nil { CapsuleTag(text: "2 personalities", color: .secondary) }
-                    if node.serialNumber != nil { CapsuleTag(text: "serial", color: .secondary) }
+                    if node.twin != nil { CapsuleTag(text: "×2", color: .secondary) }
                 }
             }
         }
@@ -195,6 +335,24 @@ private struct NodeCard: View {
                     lineWidth: isSelected || isReenumerated ? 2 : 1.4
                 )
         )
+        .overlay(alignment: .topTrailing) {
+            // Protocol-stack corner badge for top-level sections.
+            if let badge = Theme.protocolBadge(for: node.kind),
+               node.kind != .pciDevice || store.parentOf[node.id] == nil || store.allNodes[store.parentOf[node.id]!]?.kind == .system {
+                CapsuleTag(text: badge.label, color: badge.color)
+                    .offset(x: -6, y: -7)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if store.isRecording, let samples = store.series[node.id], samples.contains(where: { $0 > 0 }) {
+                Sparkline(samples: Array(samples.suffix(60)), color: node.tier.color)
+                    .frame(height: 13)
+                    .padding(.horizontal, 9)
+                    .padding(.bottom, 2)
+                    .opacity(0.55)
+                    .allowsHitTesting(false)
+            }
+        }
         .shadow(
             color: isArrival ? Color.yellow.opacity(0.8) : (isMatch ? Color.yellow.opacity(0.5) : .clear),
             radius: isArrival ? 10 : (isMatch ? 7 : 0)
@@ -210,6 +368,9 @@ private struct NodeCard: View {
             if let serial = node.serialNumber {
                 Button("Copy serial") { copy(serial) }
             }
+            if let crossLink = node.crossLinkID, store.allNodes[crossLink] != nil {
+                Button("Jump to linked node") { store.jump(to: crossLink) }
+            }
         }
         .animation(.easeOut(duration: 0.35), value: isArrival)
         .help(node.name + (node.speedLabel.isEmpty ? "" : " · \(node.speedLabel)"))
@@ -218,6 +379,31 @@ private struct NodeCard: View {
     private func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+/// Tiny last-60s throughput trace drawn along a node card's bottom while
+/// recording.
+struct Sparkline: View {
+    let samples: [Double]
+    let color: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            let peak = max(samples.max() ?? 1, 1)
+            Path { path in
+                guard samples.count > 1 else { return }
+                let stepX = geo.size.width / CGFloat(samples.count - 1)
+                for (index, value) in samples.enumerated() {
+                    let point = CGPoint(
+                        x: CGFloat(index) * stepX,
+                        y: geo.size.height * (1 - CGFloat(value / peak))
+                    )
+                    if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+                }
+            }
+            .stroke(color, style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
+        }
     }
 }
 
@@ -233,5 +419,6 @@ struct CapsuleTag: View {
             .foregroundStyle(color)
             .background(color.opacity(0.1), in: Capsule())
             .overlay(Capsule().stroke(color.opacity(0.45), lineWidth: 0.8))
+            .fixedSize()
     }
 }

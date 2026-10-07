@@ -137,9 +137,12 @@ public final class HotplugMonitor: @unchecked Sendable {
     }
 
     private func rescanNow() {
+        let tbRoots = TBTopologyBuilder.build()
         let snapshot = Snapshot(
             usbRoots: USBTopologyBuilder.build(),
-            tbRoots: TBTopologyBuilder.build()
+            tbRoots: tbRoots,
+            pciRoots: PCITopologyBuilder.build(tbRoots: tbRoots),
+            systemNode: SystemInfo.node()
         )
         onSnapshot(snapshot)
     }

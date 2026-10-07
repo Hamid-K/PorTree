@@ -17,6 +17,10 @@ struct ContentView: View {
                 } else {
                     GraphView()
                 }
+                if store.isRecording {
+                    Divider()
+                    TrafficStripView()
+                }
                 if store.drawerShown {
                     Divider()
                     EventLogView()
@@ -32,18 +36,34 @@ struct ContentView: View {
         .navigationSubtitle(subtitle)
         .toolbar {
             ToolbarItemGroup {
+                Picker("Layout", selection: $store.orientation) {
+                    ForEach(LayoutOrientation.allCases, id: \.self) { orientation in
+                        Image(systemName: orientation.symbol)
+                            .help(orientation.label)
+                            .tag(orientation)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .help("Graph direction")
+
                 Button {
-                    store.zoom = max(0.25, store.zoom / 1.2)
-                } label: { Image(systemName: "minus.magnifyingglass") }
-                    .help("Zoom out (⌘−)")
+                    store.toggleRecording()
+                } label: {
+                    Image(systemName: store.isRecording ? "stop.circle.fill" : "record.circle")
+                        .foregroundStyle(store.isRecording ? Color.red : Color.primary)
+                        .symbolEffect(.pulse, isActive: store.isRecording)
+                }
+                .help(store.isRecording ? "Stop recording throughput" : "Record live throughput (real counters only)")
+
+                Toggle(isOn: $store.bandwidthOverlay) {
+                    Image(systemName: "gauge.with.dots.needle.33percent")
+                }
+                .help("Bandwidth overlay (allocated share)")
+
                 Button {
-                    store.zoom = 1.0
-                } label: { Image(systemName: "1.magnifyingglass") }
-                    .help("Actual size (⌘0)")
-                Button {
-                    store.zoom = min(2.0, store.zoom * 1.2)
-                } label: { Image(systemName: "plus.magnifyingglass") }
-                    .help("Zoom in (⌘+)")
+                    store.toolboxShown = true
+                } label: { Image(systemName: "wrench.and.screwdriver") }
+                    .help("Debugging toolbox (⌘T)")
 
                 Button {
                     legendShown.toggle()
@@ -62,6 +82,7 @@ struct ContentView: View {
                     .help("Rescan (⌘R)")
             }
         }
+        .sheet(isPresented: $store.toolboxShown) { ToolboxView() }
         .task { store.start() }
     }
 
@@ -70,6 +91,85 @@ struct ContentView: View {
         let tbCount = snapshot.tbRoots.count
         return "\(snapshot.deviceCount) devices · \(tbCount) TB/USB4 domain\(tbCount == 1 ? "" : "s")"
             + (store.lastRefresh.map { " · refreshed \(Theme.timestamp($0))" } ?? "")
+    }
+}
+
+/// Live traffic strip (record mode): aggregate throughput bar graph with the
+/// current total, elapsed time, and the busiest devices as clickable chips.
+private struct TrafficStripView: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        HStack(spacing: 14) {
+            HStack(spacing: 6) {
+                Image(systemName: "record.circle.fill")
+                    .foregroundStyle(.red)
+                    .symbolEffect(.pulse)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(Theme.rate(store.totalSeries.last ?? 0))
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    Text(elapsed)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 118, alignment: .leading)
+
+            TrafficBars(samples: Array(store.totalSeries.suffix(150)))
+                .frame(maxWidth: .infinity, maxHeight: 34)
+
+            VStack(alignment: .trailing, spacing: 1) {
+                let talkers = store.topTalkers
+                if talkers.isEmpty {
+                    Text("waiting for traffic…")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.tertiary)
+                }
+                ForEach(talkers, id: \.id) { talker in
+                    Button {
+                        store.jump(to: talker.id)
+                    } label: {
+                        Text("\(talker.name)  \(Theme.rate(talker.rate))")
+                            .font(.system(size: 9.5, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(width: 230, alignment: .trailing)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.bar)
+    }
+
+    private var elapsed: String {
+        guard let start = store.recordingStart else { return "" }
+        let seconds = Int(Date().timeIntervalSince(start))
+        return String(format: "REC %d:%02d · %d samples", seconds / 60, seconds % 60, store.sampleCount)
+    }
+}
+
+private struct TrafficBars: View {
+    let samples: [Double]
+
+    var body: some View {
+        Canvas { context, size in
+            guard !samples.isEmpty else { return }
+            let peak = max(samples.max() ?? 1, 1)
+            let barWidth = max(2, size.width / CGFloat(max(samples.count, 60)) - 1)
+            for (index, value) in samples.enumerated() {
+                let height = max(1.5, size.height * CGFloat(value / peak))
+                let x = size.width - CGFloat(samples.count - index) * (barWidth + 1)
+                guard x > -barWidth else { continue }
+                let rect = CGRect(x: x, y: size.height - height, width: barWidth, height: height)
+                context.fill(
+                    Path(roundedRect: rect, cornerRadius: 1),
+                    with: .color(value > 0 ? .green.opacity(0.75) : .gray.opacity(0.25))
+                )
+            }
+        }
     }
 }
 

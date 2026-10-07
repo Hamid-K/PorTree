@@ -2,60 +2,132 @@ import Foundation
 import CoreGraphics
 import PortreeCore
 
-/// Tidy left→right tree layout: leaves stack vertically, parents center over
-/// their visible children. Pure function of (roots, collapsed) — cached by the
-/// view per snapshot. Coordinates are top-left corners in unscaled space.
+enum LayoutOrientation: String, CaseIterable {
+    case leftToRight, topToBottom
+
+    var label: String {
+        switch self {
+        case .leftToRight: return "Left to right"
+        case .topToBottom: return "Top to bottom"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .leftToRight: return "arrow.right.square"
+        case .topToBottom: return "arrow.down.square"
+        }
+    }
+}
+
+/// Tidy tree layout in two orientations. The System/SoC node is the real
+/// root: USB controllers, TB domains, and PCIe roots hang off it via thick
+/// "backbone" edges, so everything visibly belongs to one machine.
+/// Coordinates are top-left corners in unscaled content space.
 struct TreeLayout {
     static let nodeWidth: CGFloat = 232
     static let nodeHeight: CGFloat = 64
-    static let gapX: CGFloat = 72
-    static let gapY: CGFloat = 16
-    static let sectionGap: CGFloat = 44
+    static let gapMain: CGFloat = 72      // along the tree direction
+    static let gapCross: CGFloat = 16     // between siblings
+    static let sectionGap: CGFloat = 36   // between USB / TB / PCIe groups
 
     struct Edge: Identifiable {
         let id: String
         let childID: UInt64
-        let from: CGPoint      // right-center of parent
-        let to: CGPoint        // left-center of child
+        let childKind: NodeKind
+        let from: CGPoint
+        let to: CGPoint
         let tier: Tier
         let bps: Int64
         let dashed: Bool
-        let secondary: (tier: Tier, bps: Int64)?  // merged twin's USB2 stub
+        let isBackbone: Bool
+        let secondary: Bool   // merged twin's USB2 stub
     }
 
     private(set) var positions: [UInt64: CGPoint] = [:]
     private(set) var visibleNodes: [DeviceNode] = []
     private(set) var edges: [Edge] = []
     private(set) var size: CGSize = .zero
+    let orientation: LayoutOrientation
 
-    init(usbRoots: [DeviceNode], tbRoots: [DeviceNode], collapsed: Set<UInt64>) {
-        var cursorY: CGFloat = 24
+    init(
+        systemRoot: DeviceNode?,
+        usbRoots: [DeviceNode],
+        tbRoots: [DeviceNode],
+        pciRoots: [DeviceNode],
+        collapsed: Set<UInt64>,
+        orientation: LayoutOrientation
+    ) {
+        self.orientation = orientation
+        let horizontal = orientation == .leftToRight
+        // Abstract axes: "main" advances with depth, "cross" stacks siblings.
+        let nodeMain: CGFloat = horizontal ? Self.nodeWidth : Self.nodeHeight
+        let nodeCross: CGFloat = horizontal ? Self.nodeHeight : Self.nodeWidth
+        var cursorCross: CGFloat = 24
+        var mainByID: [UInt64: CGFloat] = [:]
+        var crossByID: [UInt64: CGFloat] = [:]
+
+        let sectionRoots = usbRoots + tbRoots + pciRoots
+        let sectionBreaks: Set<UInt64> = {
+            var breaks: Set<UInt64> = []
+            if let firstTB = tbRoots.first { breaks.insert(firstTB.id) }
+            if let firstPCI = pciRoots.first { breaks.insert(firstPCI.id) }
+            return breaks
+        }()
 
         func place(_ node: DeviceNode, depth: Int) {
-            let x = 24 + CGFloat(depth) * (Self.nodeWidth + Self.gapX)
+            let main = 24 + CGFloat(depth) * (nodeMain + Self.gapMain)
             let open = !node.children.isEmpty && !collapsed.contains(node.id)
             if !open {
-                positions[node.id] = CGPoint(x: x, y: cursorY)
-                cursorY += Self.nodeHeight + Self.gapY
+                mainByID[node.id] = main
+                crossByID[node.id] = cursorCross
+                cursorCross += nodeCross + Self.gapCross
             } else {
-                let childStart = cursorY
-                for child in node.children { place(child, depth: depth + 1) }
-                let first = positions[node.children.first!.id]!.y
-                let last = positions[node.children.last!.id]!.y
-                let centered = (first + last) / 2
-                positions[node.id] = CGPoint(x: x, y: max(childStart, centered))
-                cursorY = max(cursorY, positions[node.id]!.y + Self.nodeHeight + Self.gapY)
+                let start = cursorCross
+                for child in node.children {
+                    if sectionBreaks.contains(child.id) { cursorCross += Self.sectionGap }
+                    place(child, depth: depth + 1)
+                }
+                let first = crossByID[node.children.first!.id]!
+                let last = crossByID[node.children.last!.id]!
+                mainByID[node.id] = main
+                crossByID[node.id] = max(start, (first + last) / 2)
+                cursorCross = max(cursorCross, crossByID[node.id]! + nodeCross + Self.gapCross)
             }
             visibleNodes.append(node)
         }
 
-        for root in usbRoots { place(root, depth: 0) }
-        if !tbRoots.isEmpty {
-            cursorY += Self.sectionGap
-            for root in tbRoots { place(root, depth: 0) }
+        // Compose one tree: the System node parents every section root.
+        var roots = sectionRoots
+        if var system = systemRoot {
+            system.children = sectionRoots
+            roots = [system]
+        }
+        for root in roots { place(root, depth: 0) }
+
+        var maxMain: CGFloat = 0
+        for (id, main) in mainByID {
+            let cross = crossByID[id]!
+            positions[id] = horizontal
+                ? CGPoint(x: main, y: cross)
+                : CGPoint(x: cross, y: main)
+            maxMain = max(maxMain, main)
+        }
+        size = horizontal
+            ? CGSize(width: maxMain + Self.nodeWidth + 48, height: cursorCross + 24)
+            : CGSize(width: cursorCross + 24, height: maxMain + Self.nodeHeight + 48)
+
+        func anchorOut(_ point: CGPoint) -> CGPoint {
+            horizontal
+                ? CGPoint(x: point.x + Self.nodeWidth, y: point.y + Self.nodeHeight / 2)
+                : CGPoint(x: point.x + Self.nodeWidth / 2, y: point.y + Self.nodeHeight)
+        }
+        func anchorIn(_ point: CGPoint) -> CGPoint {
+            horizontal
+                ? CGPoint(x: point.x, y: point.y + Self.nodeHeight / 2)
+                : CGPoint(x: point.x + Self.nodeWidth / 2, y: point.y)
         }
 
-        // Edges between visible parent/child pairs.
         func buildEdges(_ node: DeviceNode) {
             guard !collapsed.contains(node.id), let parentPos = positions[node.id] else { return }
             for child in node.children {
@@ -63,19 +135,18 @@ struct TreeLayout {
                 edges.append(Edge(
                     id: "\(node.id)-\(child.id)",
                     childID: child.id,
-                    from: CGPoint(x: parentPos.x + Self.nodeWidth, y: parentPos.y + Self.nodeHeight / 2),
-                    to: CGPoint(x: childPos.x, y: childPos.y + Self.nodeHeight / 2),
+                    childKind: child.kind,
+                    from: anchorOut(parentPos),
+                    to: anchorIn(childPos),
                     tier: child.tier,
                     bps: child.linkSpeedBps,
                     dashed: child.tier == .usb1,
-                    secondary: child.twin.map { (Format.tier(forBps: $0.lowSpeedBps), $0.lowSpeedBps) }
+                    isBackbone: node.kind == .system,
+                    secondary: child.twin != nil
                 ))
                 buildEdges(child)
             }
         }
-        for root in usbRoots + tbRoots { buildEdges(root) }
-
-        let maxX = positions.values.map(\.x).max() ?? 0
-        size = CGSize(width: maxX + Self.nodeWidth + 48, height: cursorY + 24)
+        for root in roots { buildEdges(root) }
     }
 }
