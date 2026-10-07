@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hubble Mockup</title>
+<style>
+:root{
+  --bg:#1e1f24; --panel:#26272e; --panel2:#2c2d35; --stroke:#3a3b44; --hair:#34353e;
+  --text:#e8e9ed; --dim:#9a9ca8; --faint:#6b6d79;
+  --accent:#4c8dff; --sel:#2f4875;
+  --t-usb1:#8e8e93; --t-usb2:#ff9f0a; --t-usb3:#409cff; --t-usb4:#bf5af2; --t-tb:#7d7aff; --t-err:#ff453a; --t-infra:#636470;
+  --glow:#ffd60a; --card:#2b2c34; --cardsel:#33415e;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --bg:#ececf0; --panel:#f5f5f7; --panel2:#ffffff; --stroke:#d4d4da; --hair:#e0e0e6;
+    --text:#1d1d22; --dim:#5f6068; --faint:#9a9aa4;
+    --sel:#d4e3ff; --t-usb1:#8e8e93; --t-usb2:#e08900; --t-usb3:#0a66d6; --t-usb4:#a43fd8; --t-tb:#5e5ce6; --t-err:#d8261c; --t-infra:#a8a8b2;
+    --card:#ffffff; --cardsel:#e3edff;
+    color-scheme: light;
+  }
+}
+*{box-sizing:border-box; margin:0}
+html,body{height:100%}
+body{font:13px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",Helvetica,Arial,sans-serif; background:var(--bg); color:var(--text); overflow:hidden}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px}
+
+/* ── window chrome ─────────────────────────── */
+#titlebar{display:flex; align-items:center; gap:10px; height:46px; padding:0 12px; background:var(--panel); border-bottom:1px solid var(--stroke); -webkit-user-select:none; user-select:none}
+.lights{display:flex; gap:8px; margin-right:4px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.lights i:nth-child(1){background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+#apptitle{font-weight:600; font-size:13px; margin-right:8px}
+.seg{display:flex; background:var(--panel2); border:1px solid var(--stroke); border-radius:7px; overflow:hidden}
+.seg button{all:unset; padding:4px 14px; font-size:12px; color:var(--dim); cursor:pointer}
+.seg button.on{background:var(--sel); color:var(--text)}
+#toolbar-spacer{flex:1}
+#search{background:var(--panel2); border:1px solid var(--stroke); border-radius:7px; color:var(--text); padding:4px 10px; width:200px; font-size:12px; outline:none}
+#search::placeholder{color:var(--faint)}
+.tbtn{all:unset; padding:4px 9px; border:1px solid var(--stroke); border-radius:7px; background:var(--panel2); color:var(--dim); cursor:pointer; font-size:12px}
+.tbtn:hover{color:var(--text)}
+.tbtn.on{background:var(--sel); color:var(--text)}
+
+/* ── layout ────────────────────────────────── */
+#main{display:grid; grid-template-columns:270px 1fr; height:calc(100% - 46px)}
+#main.inspector-open{grid-template-columns:270px 1fr 330px}
+#sidebar{background:var(--panel); border-right:1px solid var(--stroke); overflow:auto; padding:10px 6px}
+#center{display:flex; flex-direction:column; min-width:0}
+#stage{position:relative; flex:1; overflow:hidden}
+#inspector{background:var(--panel); border-left:1px solid var(--stroke); overflow:auto; display:none}
+#main.inspector-open #inspector{display:block}
+
+/* ── sidebar outline ───────────────────────── */
+.sect{font-size:11px; font-weight:700; letter-spacing:.06em; color:var(--faint); text-transform:uppercase; padding:10px 10px 4px}
+.row{display:flex; align-items:center; gap:6px; padding:3px 8px 3px 4px; border-radius:6px; cursor:default; white-space:nowrap}
+.row:hover{background:var(--panel2)}
+.row.sel{background:var(--sel)}
+.row .chev{width:14px; text-align:center; color:var(--faint); cursor:pointer; font-size:9px; flex:none; transition:transform .15s}
+.row .chev.closed{transform:rotate(-90deg)}
+.row .chip{width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;flex:none}
+.row .nm{overflow:hidden; text-overflow:ellipsis}
+.row .spd{margin-left:auto; font-size:10px; color:var(--dim); background:var(--panel2); border:1px solid var(--hair); padding:0 6px; border-radius:8px; flex:none}
+.row.dim{opacity:.35}
+
+/* ── graph ─────────────────────────────────── */
+#graphwrap{position:absolute; inset:0; overflow:hidden; cursor:grab}
+#graphwrap.panning{cursor:grabbing}
+#world{position:absolute; transform-origin:0 0}
+#edges{position:absolute; top:0; left:0; overflow:visible}
+.node{position:absolute; width:196px; background:var(--card); border:1.5px solid var(--t-infra); border-radius:9px; padding:7px 9px 6px; box-shadow:0 1px 4px rgba(0,0,0,.25); transition:opacity .2s}
+.node:hover{filter:brightness(1.08)}
+.node.sel{background:var(--cardsel); box-shadow:0 0 0 2px var(--accent)}
+.node.dim{opacity:.3}
+.node.match{box-shadow:0 0 10px 2px color-mix(in srgb, var(--glow) 60%, transparent)}
+.node .top{display:flex; align-items:center; gap:7px}
+.node .chip{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;flex:none}
+.node .nm{font-weight:600; font-size:12px; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.node .vend{font-size:10px; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.node .meta{display:flex; align-items:center; gap:5px; margin-top:5px; flex-wrap:wrap}
+.cap{font-size:9.5px; padding:1px 7px; border-radius:8px; border:1px solid var(--hair); color:var(--text); background:var(--panel2); white-space:nowrap}
+.cap.warn{border-color:var(--t-usb2); color:var(--t-usb2)}
+.cap.err{border-color:var(--t-err); color:var(--t-err)}
+.cap.link{cursor:pointer; color:var(--accent); border-color:color-mix(in srgb,var(--accent) 50%, transparent)}
+.pill{all:unset; cursor:pointer; font-size:10px; font-weight:700; background:var(--panel2); border:1px solid var(--stroke); color:var(--dim); border-radius:9px; padding:0 7px; margin-left:auto}
+.pill:hover{color:var(--text)}
+.node.flash{animation:flash 1.2s ease-out}
+@keyframes flash{0%{box-shadow:0 0 0 3px var(--glow),0 0 18px 4px color-mix(in srgb,var(--glow) 70%, transparent)}100%{box-shadow:0 0 0 2px transparent}}
+.node.ghost{opacity:.4}
+.node.ghost .nm{text-decoration:line-through}
+
+/* zoom hud */
+#hud{position:absolute; right:14px; top:12px; display:flex; gap:6px; z-index:5}
+#fitnote{position:absolute; left:14px; bottom:12px; color:var(--faint); font-size:11px; z-index:5}
+
+/* ── outline mode (center) ─────────────────── */
+#outlineMode{position:absolute; inset:0; overflow:auto; padding:14px 18px; display:none}
+#outlineMode table{border-collapse:collapse; width:100%}
+#outlineMode th{text-align:left; font-size:10.5px; color:var(--faint); text-transform:uppercase; letter-spacing:.05em; padding:4px 10px; border-bottom:1px solid var(--stroke); position:sticky; top:-14px; background:var(--bg)}
+#outlineMode td{padding:4px 10px; border-bottom:1px solid var(--hair); white-space:nowrap}
+#outlineMode tr:hover td{background:var(--panel2)}
+#outlineMode tr.sel td{background:var(--sel)}
+
+/* ── event drawer ──────────────────────────── */
+#drawer{height:148px; border-top:1px solid var(--stroke); background:var(--panel); display:flex; flex-direction:column}
+#drawer.hidden{display:none}
+#drawer header{display:flex; align-items:center; gap:10px; padding:6px 12px; border-bottom:1px solid var(--hair); font-size:11px; color:var(--dim)}
+#drawer header .tbtn{padding:2px 8px; font-size:11px}
+#evrows{flex:1; overflow:auto; padding:4px 6px}
+.ev{display:flex; gap:10px; align-items:baseline; padding:2.5px 8px; border-radius:5px}
+.ev:hover{background:var(--panel2)}
+.ev .dot{width:7px;height:7px;border-radius:50%;flex:none; align-self:center}
+.ev .ts{color:var(--faint); flex:none}
+.ev .what{color:var(--text)}
+.ev .extra{color:var(--dim)}
+
+/* ── inspector ─────────────────────────────── */
+#inspector h2{font-size:13px; padding:12px 14px 2px}
+#inspector .sub{padding:0 14px 8px; color:var(--dim); font-size:11px}
+.tabs{display:flex; gap:2px; padding:0 10px; border-bottom:1px solid var(--stroke)}
+.tabs button{all:unset; padding:6px 10px; font-size:12px; color:var(--dim); cursor:pointer; border-bottom:2px solid transparent}
+.tabs button.on{color:var(--text); border-bottom-color:var(--accent)}
+.tabbody{padding:10px 14px 20px}
+.kv{display:grid; grid-template-columns:118px 1fr; gap:3px 10px; font-size:12px}
+.kv dt{color:var(--dim)}
+.kv dd{overflow-wrap:anywhere}
+.ksect{font-size:10.5px; font-weight:700; color:var(--faint); text-transform:uppercase; letter-spacing:.05em; margin:12px 0 5px}
+.ksect:first-child{margin-top:0}
+.rawtbl{width:100%; border-collapse:collapse; font-size:11px}
+.rawtbl td{padding:3px 6px; border-bottom:1px solid var(--hair); vertical-align:top}
+.rawtbl td:first-child{color:var(--dim); white-space:nowrap}
+.rawtbl tr:hover td{background:var(--panel2)}
+.blob{color:var(--accent); cursor:pointer}
+.iface{border:1px solid var(--hair); border-radius:8px; padding:8px 10px; margin-bottom:8px}
+.iface .t{font-weight:600; font-size:12px}
+.iface .d{color:var(--dim); font-size:11px; margin-top:2px}
+.hist{border-left:3px solid var(--t-usb2); padding:6px 10px; background:var(--panel2); border-radius:0 8px 8px 0; margin-bottom:8px; font-size:12px}
+.hist .when{color:var(--faint); font-size:10.5px}
+.empty{color:var(--faint); font-size:12px; padding:18px 4px; text-align:center}
+
+/* ── legend popover ────────────────────────── */
+#legend{position:absolute; top:52px; right:12px; z-index:30; width:270px; background:var(--panel2); border:1px solid var(--stroke); border-radius:11px; box-shadow:0 10px 32px rgba(0,0,0,.4); padding:12px 14px; display:none}
+#legend.open{display:block}
+#legend h3{font-size:12px; margin-bottom:8px}
+.lg{display:flex; align-items:center; gap:9px; padding:2.5px 0; font-size:12px}
+.lg .sw{width:26px; height:0; border-top-style:solid; border-top-color:var(--c)}
+.lg .bx{width:13px;height:13px;border-radius:4px;background:var(--c)}
+#legend .note{color:var(--dim); font-size:11px; margin-top:8px}
+</style>
+</head>
+<body>
+
+<div id="titlebar">
+  <div class="lights"><i></i><i></i><i></i></div>
+  <span id="apptitle">Hubble</span>
+  <div class="seg" id="viewseg">
+    <button data-v="outline">Outline</button><button data-v="graph" class="on">Graph</button>
+  </div>
+  <div id="toolbar-spacer"></div>
+  <input id="search" type="search" placeholder="Search devices (name, VID:PID, serial)…">
+  <button class="tbtn" id="legendBtn" title="Legend">🎨 Legend</button>
+  <button class="tbtn on" id="drawerBtn" title="Event log">☰ Events</button>
+  <button class="tbtn on" id="inspBtn" title="Inspector ⌥⌘I">ℹ︎ Inspector</button>
+</div>
+
+<div id="main" class="inspector-open">
+  <aside id="sidebar"></aside>
+  <div id="center">
+    <div id="stage">
+      <div id="graphwrap">
+        <div id="world">
+          <svg id="edges"></svg>
+          <div id="nodes"></div>
+        </div>
+      </div>
+      <div id="outlineMode"></div>
+      <div id="hud">
+        <button class="tbtn" id="zOut">−</button>
+        <button class="tbtn" id="zFit">Fit</button>
+        <button class="tbtn" id="zIn">+</button>
+      </div>
+      <div id="fitnote">drag to pan · ⌘wheel / buttons to zoom · click chevrons or +N pills to fold</div>
+      <div id="legend">
+        <h3>Legend</h3>
+        <div class="lg" style="--c:var(--t-usb1)"><span class="sw" style="border-top-width:1.5px;border-top-style:dashed"></span>USB 1.x · 1.5–12 Mb/s</div>
+        <div class="lg" style="--c:var(--t-usb2)"><span class="sw" style="border-top-width:2px"></span>USB 2.0 · 480 Mb/s</div>
+        <div class="lg" style="--c:var(--t-usb3)"><span class="sw" style="border-top-width:3px"></span>USB 3.x · 5–20 Gb/s</div>
+        <div class="lg" style="--c:var(--t-usb4)"><span class="sw" style="border-top-width:4px"></span>USB4 · 20–80 Gb/s</div>
+        <div class="lg" style="--c:var(--t-tb)"><span class="sw" style="border-top-width:5px"></span>Thunderbolt 3/4/5 · 40–120 Gb/s</div>
+        <div class="lg" style="--c:var(--t-err)"><span class="bx"></span>Error / removed / throttled</div>
+        <div class="lg" style="--c:var(--t-infra)"><span class="bx"></span>Infrastructure (controllers, internal hubs)</div>
+        <div class="note">Border &amp; edge color = protocol tier · edge thickness = speed · icon = device class. Speed is always shown as text too.</div>
+      </div>
+    </div>
+    <div id="drawer">
+      <header>
+        <strong style="color:var(--text)">Event Log</strong>
+        <span id="evcount"></span>
+        <span style="flex:1"></span>
+        <button class="tbtn">⏸ Pause</button>
+        <button class="tbtn">Clear</button>
+        <span class="mono" style="color:var(--faint)">~/Library/Application Support/Hubble/events.jsonl</span>
+      </header>
+      <div id="evrows"></div>
+    </div>
+  </div>
+  <aside id="inspector"></aside>
+</div>
+
+<script>
+/* ════════ data — captured from THIS machine (ioreg -p IOUSB / SPThunderboltDataType, 2026-10-07) ════════ */
+const T = { usb1:'--t-usb1', usb2:'--t-usb2', usb3:'--t-usb3', usb4:'--t-usb4', tb:'--t-tb', infra:'--t-infra', err:'--t-err' };
+const IC = { controller:'🎛️', hub:'🔌', kbd:'⌨️', mouse:'🖱️', mic:'🎤', cam:'📷', net:'🌐', disp:'🖥️', tb:'⚡', dp:'🔗', unk:'❓' };
+
+const N = (o) => Object.assign({children:[], badges:[], raw:{}, ifaces:[], hist:[], tier:'infra', icon:'unk', vend:'', spd:'', bps:0}, o);
+
+const usbTree = [
+ N({id:'c0', name:'Receptacle 1 (bus 0)', vend:'AppleT8142USBXHCI @00000000', icon:'controller', tier:'infra', spd:'USB 3.1',
+   raw:{'IOClass':'AppleT8142USBXHCI','locationID':'0x00000000','UsbHostControllerProtocolRevision':'"3.1"','UsbHostControllerTierLimit':'6','CFBundleIdentifier':'"com.apple.driver.usb.AppleSynopsysUSB40XHCI"'},
+   children:[
+    N({id:'shure', name:'Shure MV7+', vend:'Shure Inc', icon:'mic', tier:'usb2', spd:'480 Mb/s', bps:480e6,
+      badges:[{t:'serial'},{t:'owner: usbaudiod'}],
+      raw:{'idVendor':'0x14ED (5357)','idProduct':'0x1019 (4121)','bcdUSB':'0x0210 → 2.10','bDeviceClass':'0xEF Miscellaneous','USB Product Name':'"Shure MV7+"','USB Vendor Name':'"Shure Inc"','USB Serial Number':'"MV7+#12-2010683d08efde5a91dc9678e78fbf1a"','UsbLinkSpeed':'480,000,000 b/s','Device Speed':'2 (High)','USBPortType':'5 (USB-C)','UsbPowerSinkAllocation':'500 mA','locationID':'0x00100000','sessionID':'4435799708102','kUSBContainerID':'{…} @blob','UsbDeviceSignature':'⟨16 B⟩ @blob','UsbExclusiveOwner':'"pid 94851, usbaudiod"'},
+      ifaces:[{t:'ifc 0 — HID (03/00/00)', d:'2 endpoints · AppleUserUSBHostHIDDevice'},{t:'ifc 1 — Audio Control (01/01/20)', d:'UAC2 · AppleUSBAudioControlNub → usbaudiod'},{t:'ifc 2 — Audio Streaming (01/02/20)', d:'alt 1 · 1 endpoint'},{t:'ifc 3 — Audio Streaming (01/02/20)', d:'alt 1 · 1 endpoint'}],
+      hist:[{when:'2026-10-06 09:12 → today', what:'No changes across 4 replugs — descriptors, speed and port stable.', warn:false}]}),
+   ]}),
+ N({id:'c1', name:'Receptacle 2 (bus 1)', vend:'AppleT8142USBXHCI @01000000', icon:'controller', tier:'infra', spd:'idle',
+   raw:{'IOClass':'AppleT8142USBXHCI','locationID':'0x01000000','UsbHostControllerTierLimit':'6'},
+   badges:[{t:'no devices'}]}),
+ N({id:'c2', name:'Receptacle 3 (bus 2)', vend:'AppleT8142USBXHCI @02000000', icon:'controller', tier:'infra', spd:'USB 3.1',
+   badges:[{t:'⚡ TB cross-link', link:'tbdell'}],
+   raw:{'IOClass':'AppleT8142USBXHCI','locationID':'0x02000000','UsbIOPort':'→ …/Port-USB-C@3','UsbTransportState':'→ …/Port-USB-C@3/CIO/USB3@0'},
+   children:[
+    N({id:'dellhub', name:'U2725QE Hub (merged twin)', vend:'Fresco Logic / Intel · ContainerID fb4b1787…', icon:'hub', tier:'usb3', spd:'480 M + 10 G', bps:10e9,
+      badges:[{t:'tunnel ⚡'},{t:'2 personalities'}],
+      raw:{'— USB3 personality —':'"USB3.0 Hub" (Intel, 0x8087:0x0B40)','— USB2 personality —':'"USB2.0 Hub" (Fresco Logic, 0x1D5C:0x5801)','UsbTunnel':'Yes','UsbLinkSpeed':'10,000,000,000 b/s (USB3) · 480,000,000 (USB2)','kUSBContainerID':'shared — merge guard passed (class 9, same controller, 480M/10G split)','bDeviceClass':'0x09 Hub'},
+      ifaces:[{t:'Hub (09/00/02) — multi-TT', d:'USB2 personality · AppleUSB20Hub'},{t:'Hub (09/00/03)', d:'USB3 personality · AppleUSB30Hub'}],
+      children:[
+       N({id:'smart1', name:'Smart Hub tier 1 (merged)', vend:'Microchip USB4206 / USB7206', icon:'hub', tier:'usb3', spd:'480 M + 10 G', bps:10e9, badges:[{t:'monitor internal'}],
+         raw:{'idVendor':'0x0424 Microchip','USB2 twin':'USB4206 @02140000','USB3 twin':'USB7206 @02240000','bDeviceClass':'0x09 Hub'},
+         children:[
+          N({id:'lan', name:'USB 10/100/1G/2.5G LAN', vend:'Realtek', icon:'net', tier:'usb3', spd:'5 Gb/s', bps:5e9, badges:[{t:'serial'}],
+            raw:{'idVendor':'0x0BDA Realtek','idProduct':'0x8156','UsbLinkSpeed':'5,000,000,000 b/s','USB Serial Number':'"0113000001"','UsbPowerSinkAllocation':'256 mA','bDeviceClass':'0x00 (composite)'},
+            ifaces:[{t:'ifc 0 — CDC NCM (02/0D/00)', d:'→ en7 · AppleUSBNCMData'}]}),
+          N({id:'smart2', name:'Smart Hub tier 2 (merged)', vend:'Microchip USB4206 / USB7206', icon:'hub', tier:'usb3', spd:'480 M + 10 G', bps:10e9,
+            badges:[{t:'tier 5/6', warn:true}],
+            raw:{'USB2 twin':'USB4206 @02141300','USB3 twin':'USB7206 @02241300','Doctor':'Deep hub chain — devices below are at tier 5–6 of 6 (UsbHostControllerTierLimit)'},
+            children:[
+             N({id:'logi', name:'USB Receiver', vend:'Logitech', icon:'mouse', tier:'usb1', spd:'12 Mb/s', bps:12e6, badges:[{t:'tier 6/6', warn:true}],
+               raw:{'idVendor':'0x046D Logitech','idProduct':'0xC539','UsbLinkSpeed':'12,000,000 b/s','Device Speed':'1 → legacy Full','USBSpeed':'1 (Full — enum swapped vs legacy!)','bDeviceClass':'0x00 (composite)'},
+               ifaces:[{t:'ifc 0 — HID (03/01/01) boot kbd', d:'AppleUserUSBHostHIDDevice'},{t:'ifc 1 — HID (03/01/02) boot mouse', d:'AppleUserUSBHostHIDDevice'},{t:'ifc 2 — HID (03/00/00) vendor', d:'Logitech receiver protocol'}],
+               hist:[{when:'2026-10-07 13:41', what:'Re-enumerated ×3 in 2.1 s (new sessionID each time) — flaky link or power dip suspected.', warn:true}]}),
+             N({id:'keych', name:'Keychron Link', vend:'Keychron', icon:'kbd', tier:'usb1', spd:'12 Mb/s', bps:12e6, badges:[{t:'tier 6/6', warn:true}],
+               raw:{'idVendor':'0x3434 Keychron','idProduct':'0xD030','bcdDevice':'0x0625','UsbLinkSpeed':'12,000,000 b/s','locationID':'0x02141330 → bus 2, ports 1·4·1·3·3'},
+               ifaces:[{t:'ifc 0 — HID (03/01/01)', d:'keyboard'},{t:'ifc 1 — HID (03/00/00)', d:'vendor / VIA'}]}),
+             N({id:'smart3', name:'Smart Hub tier 3 (merged)', vend:'Microchip USB4216 / USB7216', icon:'hub', tier:'usb3', spd:'480 M + 10 G', bps:10e9, badges:[{t:'tier 6/6', warn:true}],
+               raw:{'USB2 twin':'USB4216 @02141340','USB3 twin':'USB7216 @02241340'}}),
+             N({id:'xt5', name:'FUJIFILM X-T5', vend:'FUJIFILM', icon:'cam', tier:'usb3', spd:'10 Gb/s', bps:10e9, badges:[{t:'serial'}],
+               raw:{'idVendor':'0x04CB FUJIFILM','idProduct':'0x02FB','bcdUSB':'0x0320 → 3.20','UsbLinkSpeed':'10,000,000,000 b/s','USB Serial Number':'"593536383831221024F1E310210FB"','UsbPowerSinkAllocation':'496 mA','bDeviceClass':'0xEF Miscellaneous','sessionID':'4439089592969'},
+               ifaces:[{t:'ifc 0 — Still Image / PTP (06/01/01)', d:'3 endpoints · ICDeviceBrowser'}],
+               hist:[{when:'2026-10-07 13:42', what:'Connected at 10 Gb/s (prev. session: 10 Gb/s) — no descriptor changes.', warn:false}]}),
+            ]}),
+         ]}),
+      ]}),
+   ]}),
+ N({id:'c8', name:'Internal controller', vend:'AppleT6050USBXHCIAUSS @08000000', icon:'controller', tier:'infra', spd:'internal',
+   raw:{'IOClass':'AppleT6050USBXHCIAUSS','locationID':'0x08000000'}, badges:[{t:'no devices'}]}),
+];
+
+const tbTree = [
+ N({id:'tbd2', name:'TB/USB4 Domain 2', vend:'Apple root switch · UID 0x05AC22EB3710E2B2', icon:'tb', tier:'tb', spd:'40 Gb/s ×2',
+   badges:[{t:'Socket 3'},{t:'USB cross-link', link:'c2'}],
+   raw:{'Domain UUID':'FDDFF431-C923-4154-A276-E13F8346138B','Route String':'0','Thunderbolt Version':'64 (USB4 v2 host)','Firmware':'AppleCIOFirmwareV2-761.0.3','Current Link Speed':'4 · Width 2 · Link Bandwidth 400 (=40 Gb/s)'},
+   children:[
+    N({id:'tbdell', name:'U2725QE', vend:'DELL · USB4 mode', icon:'disp', tier:'usb4', spd:'40 Gb/s', bps:40e9,
+      badges:[{t:'route 1'},{t:'NVM 44.3'},{t:'DP tunnel: DELL U2725QE'},{t:'USB cross-link', link:'dellhub'}],
+      raw:{'IOClass':'IOThunderboltSwitchIntelJHL8440','Device Vendor ID':'0x413C DELL','Device Model ID':'0xC050','UID':'0x8087B6DC08810300 (signed −9185171858847104256)','Route String':'1','Depth':'1','ROM Version':'68 → NVM "44.3" (EEPROM 3)','USB Port Map':'01 81 91 · 02 82 92 · 03 83 93 (receptacle ↔ hub ports)','Cable (SOP′ e-marker)':'Apple Active Cable · Gen 2 · orientation: up'},
+      hist:[{when:'2026-10-05 18:20', what:'Link retrained 20 → 40 Gb/s after cable reseat.', warn:true}],
+      children:[
+       N({id:'tbcm', name:'TB3 → Dual DisplayPort', vend:'Cable Matters Inc.', icon:'dp', tier:'tb', spd:'40 Gb/s', bps:40e9,
+         badges:[{t:'route 301'},{t:'NVM 25.1'},{t:'TB3 mode'}],
+         raw:{'IOClass':'IOThunderboltSwitchType3','Vendor ID':'0x0177 Cable Matters','Device ID':'0x426E','Route String':'0x301 (port 3 on Dell → port 1 on root)','Depth':'2','Thunderbolt Version':'2 (TB3)','ROM Version':'37 → NVM "25.1"'}}),
+      ]}),
+   ]}),
+ N({id:'tbd1', name:'TB/USB4 Domain 1', vend:'Apple root switch · UID 0x05AC22EB3710E2B1', icon:'tb', tier:'infra', spd:'up to 120 Gb/s',
+   badges:[{t:'Socket 2'},{t:'idle'},{t:'TB5-class'}],
+   raw:{'Domain UUID':'B10AB1AA-2BC8-417D-ACBC-EEBB53623272','Supported Link Speed':'14 (TB5-class)','Link Bandwidth':'1200 (=120 Gb/s capability)','Current Link Speed':'0 (no device)'}}),
+ N({id:'tbd0', name:'TB/USB4 Domain 0', vend:'Apple root switch · UID 0x05AC22EB3710E2B0', icon:'tb', tier:'infra', spd:'up to 120 Gb/s',
+   badges:[{t:'Socket 1'},{t:'idle'},{t:'TB5-class'}],
+   raw:{'Domain UUID':'7CDAC8F0-A312-4C32-9CE0-B19F8E4F1269','Supported Link Speed':'14 (TB5-class)','Link Bandwidth':'1200 (=120 Gb/s capability)'}}),
+];
+
+const events = [
+ ['13:42:07','usb3','connected','FUJIFILM X-T5','10 Gb/s · Receptacle 3 › …tier 2','xt5'],
+ ['13:41:55','usb2','re-enumerated ×3 in 2.1 s','USB Receiver','flaky link suspected','logi'],
+ ['13:40:12','tb','TB link trained','U2725QE','40 Gb/s ×2 · route 1','tbdell'],
+ ['13:40:11','tb','switch published','TB3 → Dual DisplayPort','route 0x301','tbcm'],
+ ['13:40:09','usb3','connected','USB 10/100/1G/2.5G LAN','5 Gb/s','lan'],
+ ['13:39:58','infra','rescan','USB + Thunderbolt','21 devices · 23 interfaces · 3 domains',null],
+ ['09:02:31','err','disconnected','Shure MV7+','ghost held 4 s','shure'],
+ ['09:02:35','usb2','re-enumerated','Shure MV7+','same identity → collapsed presentation','shure'],
+];
+
+/* ════════ state ════════ */
+const S = { collapsed:new Set(), sel:'xt5', view:'graph', zoom:1, panX:40, panY:30, q:'', tab:'Decoded' };
+const all = {};
+(function index(list,parent){ for(const n of list){ n.parent=parent; all[n.id]=n; index(n.children,n);} })([...usbTree,...tbTree],null);
+
+const tierVar = t => `var(${T[t]||T.infra})`;
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+
+/* ════════ sidebar ════════ */
+function renderSidebar(){
+  const el = document.getElementById('sidebar'); el.innerHTML='';
+  const mk=(nodes,depth,host)=>{ for(const n of nodes){
+    const row=document.createElement('div'); row.className='row'+(S.sel===n.id?' sel':'')+(dimmed(n)?' dim':'');
+    row.style.paddingLeft=(4+depth*14)+'px';
+    const has=n.children.length>0, closed=S.collapsed.has(n.id);
+    row.innerHTML=`<span class="chev ${closed?'closed':''}" style="visibility:${has?'visible':'hidden'}">▾</span>
+      <span class="chip" style="background:color-mix(in srgb, ${tierVar(n.tier)} 22%, transparent)">${IC[n.icon]}</span>
+      <span class="nm">${esc(n.name)}</span><span class="spd">${esc(n.spd)}</span>`;
+    row.querySelector('.chev').onclick=e=>{e.stopPropagation(); toggle(n.id);};
+    row.onclick=()=>select(n.id);
+    host.appendChild(row);
+    if(has&&!closed) mk(n.children,depth+1,host);
+  }};
+  const s1=document.createElement('div'); s1.className='sect'; s1.textContent='USB'; el.appendChild(s1); mk(usbTree,0,el);
+  const s2=document.createElement('div'); s2.className='sect'; s2.textContent='Thunderbolt / USB4'; el.appendChild(s2); mk(tbTree,0,el);
+}
+
+/* ════════ graph layout (tidy-ish tree, left→right) ════════ */
+const NW=196, NGX=70, NGY=14;
+function layout(){
+  const pos={}, sizes={}; let y=0;
+  const H=n=>44+((n.badges.length||n.spd)?22:0);
+  function place(n,depth){
+    const h=H(n); const open=n.children.length&&!S.collapsed.has(n.id);
+    if(!open){ pos[n.id]={x:depth*(NW+NGX), y}; y+=h+NGY; return pos[n.id].y0=pos[n.id].y, h; }
+    const y0=y; for(const c of n.children) place(c,depth+1);
+    const first=pos[n.children[0].id], last=pos[n.children[n.children.length-1].id];
+    pos[n.id]={x:depth*(NW+NGX), y:Math.max(y0,(first.y+last.y)/2)};
+    y=Math.max(y,pos[n.id].y+h+NGY);
+    return h;
+  }
+  let maxD=0; const depth=(l,d)=>{maxD=Math.max(maxD,d); for(const n of l) if(n.children.length&&!S.collapsed.has(n.id)) depth(n.children,d+1);};
+  for(const root of [...usbTree,...tbTree]) place(root,0);
+  depth([...usbTree,...tbTree],0);
+  return {pos, w:(maxD+1)*(NW+NGX)+NW, h:y+40, H};
+}
+
+function edgePath(a,b,ha,hb){
+  const x1=a.x+NW, y1=a.y+ha/2, x2=b.x, y2=b.y+hb/2, mx=x1+NGX/2;
+  return `M ${x1} ${y1} L ${mx} ${y1} Q ${mx+8} ${y1} ${mx+8} ${y1+Math.sign(y2-y1)*Math.min(8,Math.abs(y2-y1))} L ${mx+8} ${y2-Math.sign(y2-y1)*Math.min(8,Math.abs(y2-y1))} Q ${mx+8} ${y2} ${mx+16} ${y2} L ${x2} ${y2}`;
+}
+const widthFor = bps => !bps?1.5: bps<=12e6?1.5 : bps<=480e6?2 : bps<=10e9?3 : bps<=20e9?3.5 : 5;
+
+function renderGraph(){
+  const {pos,w,h,H}=layout();
+  const world=document.getElementById('world');
+  world.style.width=w+'px'; world.style.height=h+'px';
+  world.style.transform=`translate(${S.panX}px,${S.panY}px) scale(${S.zoom})`;
+  const svg=document.getElementById('edges'); svg.setAttribute('width',w); svg.setAttribute('height',h);
+  let paths='';
+  const walk=n=>{ if(S.collapsed.has(n.id)) return;
+    for(const c of n.children){
+      const dashed=c.bps&&c.bps<=12e6?'stroke-dasharray="5 4"':'';
+      paths+=`<path d="${edgePath(pos[n.id],pos[c.id],H(n),H(c))}" fill="none" stroke="${getComputedStyle(document.documentElement).getPropertyValue(T[c.tier]||T.infra)}" stroke-width="${widthFor(c.bps)}" ${dashed} opacity="${dimmed(c)?.25:.9}"/>`;
+      walk(c);
+    }};
+  for(const r of [...usbTree,...tbTree]) walk(r);
+  svg.innerHTML=paths;
+
+  const host=document.getElementById('nodes'); host.innerHTML='';
+  const card=n=>{
+    const p=pos[n.id]; if(!p) return;
+    const closed=S.collapsed.has(n.id), kids=countDesc(n);
+    const d=document.createElement('div');
+    d.className='node'+(S.sel===n.id?' sel':'')+(dimmed(n)?' dim':'')+(isMatch(n)&&S.q?' match':'');
+    d.style.left=p.x+'px'; d.style.top=p.y+'px'; d.style.borderColor=tierVar(n.tier); d.id='nd-'+n.id;
+    const badges=n.badges.map(b=>`<span class="cap ${b.warn?'warn':''} ${b.link?'link':''}" ${b.link?`data-link="${b.link}"`:''}>${esc(b.t)}</span>`).join('');
+    d.innerHTML=`<div class="top"><span class="chip" style="background:color-mix(in srgb, ${tierVar(n.tier)} 22%, transparent)">${IC[n.icon]}</span>
+      <div style="min-width:0"><div class="nm">${esc(n.name)}</div><div class="vend">${esc(n.vend)}</div></div>
+      ${n.children.length?`<button class="pill" data-fold="${n.id}">${closed?'+'+kids:'−'}</button>`:''}</div>
+      <div class="meta">${n.spd?`<span class="cap" style="border-color:${tierVar(n.tier)};color:${tierVar(n.tier)}">${esc(n.spd)}</span>`:''}${badges}</div>`;
+    d.onclick=e=>{ if(e.target.dataset.fold){toggle(e.target.dataset.fold);return;}
+      if(e.target.dataset.link){ jumpTo(e.target.dataset.link); return;} select(n.id); };
+    host.appendChild(d);
+    if(!closed) n.children.forEach(card);
+  };
+  for(const r of [...usbTree,...tbTree]) card(r);
+}
+function countDesc(n){let c=0; const w=x=>{for(const k of x.children){c++;w(k);}}; w(n); return c;}
+
+/* ════════ outline mode ════════ */
+function renderOutlineMode(){
+  const el=document.getElementById('outlineMode');
+  let rows='';
+  const mk=(nodes,depth)=>{for(const n of nodes){
+    const closed=S.collapsed.has(n.id);
+    rows+=`<tr class="${S.sel===n.id?'sel':''}" data-id="${n.id}">
+      <td style="padding-left:${10+depth*20}px">${n.children.length?`<span class="chev mono" data-fold="${n.id}" style="cursor:pointer;color:var(--faint)">${closed?'▸':'▾'}</span> `:'<span style="display:inline-block;width:10px"></span> '}${IC[n.icon]} ${esc(n.name)}</td>
+      <td>${esc(n.vend)}</td>
+      <td><span class="cap" style="border-color:${tierVar(n.tier)};color:${tierVar(n.tier)}">${esc(n.spd)||'—'}</span></td>
+      <td class="mono" style="color:var(--dim)">${esc(n.raw['idVendor']||n.raw['Device Vendor ID']||'')}</td></tr>`;
+    if(n.children.length&&!closed) mk(n.children,depth+1);
+  }};
+  mk([...usbTree],0); rows+='<tr><td colspan="4" style="padding:10px;color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;border-bottom:none">Thunderbolt / USB4</td></tr>'; mk([...tbTree],0);
+  el.innerHTML=`<table><thead><tr><th>Device</th><th>Vendor</th><th>Link</th><th>VID</th></tr></thead><tbody>${rows}</tbody></table>`;
+  el.querySelectorAll('tr[data-id]').forEach(tr=>tr.onclick=e=>{ const f=e.target.dataset.fold; if(f){toggle(f);return;} select(tr.dataset.id); });
+}
+
+/* ════════ inspector ════════ */
+function renderInspector(){
+  const n=all[S.sel]; const el=document.getElementById('inspector');
+  if(!n){el.innerHTML='<div class="empty">Select a device</div>';return;}
+  const tabs=['Decoded','Raw','Interfaces','History'];
+  let body='';
+  if(S.tab==='Decoded'){
+    body=`<div class="ksect">Identity</div><dl class="kv">
+      <dt>Name</dt><dd>${esc(n.name)}</dd><dt>Vendor</dt><dd>${esc(n.vend)||'—'}</dd>
+      <dt>VID : PID</dt><dd class="mono">${esc(n.raw['idVendor']||n.raw['Device Vendor ID']||'—')} : ${esc(n.raw['idProduct']||n.raw['Device Model ID']||'—')}</dd>
+      <dt>Class</dt><dd>${esc(n.raw['bDeviceClass']||n.raw['IOClass']||'—')}</dd>
+      <dt>Serial</dt><dd class="mono">${esc((n.raw['USB Serial Number']||'—').slice(0,34))}</dd></dl>
+      <div class="ksect">Link</div><dl class="kv">
+      <dt>Speed</dt><dd><span class="cap" style="border-color:${tierVar(n.tier)};color:${tierVar(n.tier)}">${esc(n.spd)||'—'}</span></dd>
+      <dt>UsbLinkSpeed</dt><dd class="mono">${esc(n.raw['UsbLinkSpeed']||'—')}</dd>
+      <dt>Route / loc</dt><dd class="mono">${esc(n.raw['Route String']||n.raw['locationID']||'—')}</dd>
+      <dt>Tunnel</dt><dd>${n.raw['UsbTunnel']||((n.tier==='tb'||n.tier==='usb4')?'native TB/USB4':'No')}</dd></dl>
+      <div class="ksect">Power</div><dl class="kv">
+      <dt>Sink allocation</dt><dd>${esc(n.raw['UsbPowerSinkAllocation']||'—')} <span style="color:var(--faint)">/ 3000 mA port limit</span></dd></dl>
+      ${n.badges.some(b=>b.warn)?`<div class="ksect">Doctor</div><div class="hist" style="border-left-color:var(--t-usb2)">⚠️ ${esc(n.raw['Doctor']||'Deep hub chain — this device sits at tier 6 of 6 (UsbHostControllerTierLimit). Devices added below it will fail to enumerate.')}</div>`:''}`;
+  } else if(S.tab==='Raw'){
+    body=`<table class="rawtbl">${Object.entries(n.raw).map(([k,v])=>`<tr><td class="mono">${esc(k)}</td><td class="mono">${String(v).includes('@blob')?`<span class="blob" title="Open hex viewer">${esc(String(v).replace(' @blob',''))} ⌗</span>`:esc(v)}</td></tr>`).join('')||'<tr><td class="empty" colspan="2">—</td></tr>'}</table>
+    <p style="color:var(--faint);font-size:10.5px;margin-top:8px">Every IORegistry key, unfiltered. Click a value to copy · ⌗ opens the hex viewer (OSData blobs export as base64).</p>`;
+  } else if(S.tab==='Interfaces'){
+    body=n.ifaces.length?n.ifaces.map(i=>`<div class="iface"><div class="t">${esc(i.t)}</div><div class="d">${esc(i.d)}</div></div>`).join(''):'<div class="empty">No interfaces published for this node.</div>';
+  } else {
+    body=n.hist.length?n.hist.map(h=>`<div class="hist" style="border-left-color:${h.warn?'var(--t-usb2)':'var(--t-usb3)'}"><div class="when">${esc(h.when)}</div>${esc(h.what)}</div>`).join(''):'<div class="empty">No history yet — this device will be tracked from now on.</div>';
+    if(n.hist.length&&!n.raw['USB Serial Number']&&n.id!=='tbdell') body+='<p style="color:var(--faint);font-size:10.5px">No serial — identity keyed by VID+PID+location path (low confidence).</p>';
+  }
+  el.innerHTML=`<h2>${IC[n.icon]} ${esc(n.name)}</h2><div class="sub">${esc(n.vend)||'&nbsp;'}</div>
+    <div class="tabs">${tabs.map(t=>`<button class="${S.tab===t?'on':''}" data-t="${t}">${t}</button>`).join('')}</div>
+    <div class="tabbody">${body}</div>`;
+  el.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{S.tab=b.dataset.t; renderInspector();});
+}
+
+/* ════════ events ════════ */
+function renderEvents(){
+  const colors={usb1:'--t-usb1',usb2:'--t-usb2',usb3:'--t-usb3',tb:'--t-tb',err:'--t-err',infra:'--t-infra'};
+  document.getElementById('evrows').innerHTML=events.map(([ts,tier,what,who,extra,id])=>
+    `<div class="ev" ${id?`data-id="${id}" style="cursor:pointer"`:''}><span class="dot" style="background:var(${colors[tier]})"></span><span class="ts mono">${ts}</span><span class="what"><strong>${esc(what)}</strong> — ${esc(who)}</span><span class="extra">${esc(extra)}</span></div>`).join('');
+  document.getElementById('evcount').textContent=events.length+' rows · coalesced';
+  document.querySelectorAll('#evrows .ev[data-id]').forEach(r=>r.onclick=()=>jumpTo(r.dataset.id));
+}
+
+/* ════════ search / selection / fold ════════ */
+function isMatch(n){ if(!S.q) return true; const q=S.q.toLowerCase();
+  return (n.name+' '+n.vend+' '+Object.values(n.raw).join(' ')).toLowerCase().includes(q); }
+function hasMatchDesc(n){ return isMatch(n)||n.children.some(hasMatchDesc); }
+function dimmed(n){ return S.q && !isMatch(n) && !hasMatchDesc(n); }
+function toggle(id){ S.collapsed.has(id)?S.collapsed.delete(id):S.collapsed.add(id); renderAll(); }
+function select(id){ S.sel=id; renderAll(); }
+function jumpTo(id){ // expand ancestors, select, center, flash
+  let n=all[id]; while(n){ S.collapsed.delete(n.id); n=n.parent; }
+  S.sel=id;
+  if(S.view==='graph'){ const {pos}=layout(); const p=pos[id];
+    if(p){ const r=document.getElementById('graphwrap').getBoundingClientRect();
+      S.panX=r.width/2-(p.x+NW/2)*S.zoom; S.panY=r.height/2-(p.y+30)*S.zoom; } }
+  renderAll();
+  const el=document.getElementById('nd-'+id); if(el){ el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'),1300); }
+}
+
+/* ════════ chrome wiring ════════ */
+document.getElementById('search').oninput=e=>{S.q=e.target.value; renderAll();};
+document.getElementById('legendBtn').onclick=()=>document.getElementById('legend').classList.toggle('open');
+document.getElementById('drawerBtn').onclick=e=>{document.getElementById('drawer').classList.toggle('hidden'); e.target.classList.toggle('on');};
+document.getElementById('inspBtn').onclick=e=>{document.getElementById('main').classList.toggle('inspector-open'); e.target.classList.toggle('on');};
+document.querySelectorAll('#viewseg button').forEach(b=>b.onclick=()=>{
+  S.view=b.dataset.v;
+  document.querySelectorAll('#viewseg button').forEach(x=>x.classList.toggle('on',x===b));
+  document.getElementById('graphwrap').style.display=S.view==='graph'?'':'none';
+  document.getElementById('hud').style.display=S.view==='graph'?'':'none';
+  document.getElementById('fitnote').style.display=S.view==='graph'?'':'none';
+  document.getElementById('outlineMode').style.display=S.view==='outline'?'block':'none';
+  renderAll();
+});
+document.getElementById('zIn').onclick=()=>{S.zoom=Math.min(2,S.zoom*1.2); renderGraph();};
+document.getElementById('zOut').onclick=()=>{S.zoom=Math.max(.25,S.zoom/1.2); renderGraph();};
+document.getElementById('zFit').onclick=fit;
+function fit(){ const {w,h}=layout(); const r=document.getElementById('graphwrap').getBoundingClientRect();
+  if(r.width<80||r.height<80){ requestAnimationFrame(fit); return; }
+  S.zoom=Math.max(.3,Math.min(1,(r.width-60)/w,(r.height-60)/h));
+  S.panX=Math.max(16,(r.width-w*S.zoom)/2); S.panY=Math.max(16,(r.height-h*S.zoom)/2); renderGraph(); }
+
+/* pan + zoom gestures */
+(()=>{ const g=document.getElementById('graphwrap'); let drag=null;
+ g.addEventListener('mousedown',e=>{ if(e.target.closest('.node'))return; drag={x:e.clientX-S.panX,y:e.clientY-S.panY}; g.classList.add('panning');});
+ addEventListener('mousemove',e=>{ if(!drag)return; S.panX=e.clientX-drag.x; S.panY=e.clientY-drag.y;
+   document.getElementById('world').style.transform=`translate(${S.panX}px,${S.panY}px) scale(${S.zoom})`;});
+ addEventListener('mouseup',()=>{drag=null; g.classList.remove('panning');});
+ g.addEventListener('wheel',e=>{ if(!(e.metaKey||e.ctrlKey)){S.panX-=e.deltaX;S.panY-=e.deltaY;}
+   else { e.preventDefault(); S.zoom=Math.min(2,Math.max(.25,S.zoom*(e.deltaY<0?1.08:0.92))); }
+   document.getElementById('world').style.transform=`translate(${S.panX}px,${S.panY}px) scale(${S.zoom})`;},{passive:false});
+})();
+
+function renderAll(){ renderSidebar(); if(S.view==='graph') renderGraph(); else renderOutlineMode(); renderInspector(); }
+renderEvents(); renderAll(); fit();
+/* demo: flash the camera on load, like a fresh arrival */
+setTimeout(()=>jumpTo('xt5'),400);
+</script>
+</body>
+</html>
