@@ -1,0 +1,74 @@
+import SwiftUI
+import PortreeCore
+
+/// Color = protocol/speed tier; icon = device class — two orthogonal facts.
+/// System colors adapt to dark/light automatically. Color never stands alone:
+/// the speed text is always rendered next to it.
+extension Tier {
+    var color: Color {
+        switch self {
+        case .usb1: return .gray
+        case .usb2: return .orange
+        case .usb3: return .blue
+        case .usb4: return .purple
+        case .thunderbolt: return .indigo
+        case .infrastructure: return Color.gray.opacity(0.55)
+        case .error: return .red
+        }
+    }
+
+    var legendLabel: String {
+        switch self {
+        case .usb1: return "USB 1.x · 1.5–12 Mb/s"
+        case .usb2: return "USB 2.0 · 480 Mb/s"
+        case .usb3: return "USB 3.x · 5–20 Gb/s"
+        case .usb4: return "USB4 · tunneled 40 Gb/s+"
+        case .thunderbolt: return "Thunderbolt / USB4 fabric"
+        case .infrastructure: return "Infrastructure (controllers, idle)"
+        case .error: return "Error / removed"
+        }
+    }
+}
+
+extension DeviceCategory {
+    var symbol: String {
+        switch self {
+        case .controller: return "cpu"
+        case .hub: return "cable.connector.horizontal"
+        case .hid: return "keyboard"
+        case .storage: return "externaldrive"
+        case .audio: return "mic"
+        case .video: return "camera"
+        case .network: return "network"
+        case .display: return "display"
+        case .tbSwitch: return "bolt.horizontal"
+        case .tbDomain: return "bolt.horizontal.circle"
+        case .adapter: return "cable.connector"
+        case .vendor: return "shippingbox"
+        case .unknown: return "questionmark.square.dashed"
+        }
+    }
+}
+
+enum Theme {
+    /// Edge stroke width by negotiated speed — thickness is the second visual
+    /// speed encoding after color.
+    static func edgeWidth(bps: Int64) -> CGFloat {
+        switch bps {
+        case ..<1: return 1.2
+        case ..<13_000_000: return 1.2
+        case ..<1_000_000_000: return 2.0
+        case ..<6_000_000_000: return 2.8
+        case ..<11_000_000_000: return 3.4
+        case ..<21_000_000_000: return 4.0
+        case ..<41_000_000_000: return 5.0
+        default: return 6.0
+        }
+    }
+
+    static func timestamp(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: date)
+    }
+}
