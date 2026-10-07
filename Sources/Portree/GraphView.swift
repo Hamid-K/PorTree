@@ -625,6 +625,7 @@ private struct NodeCard: View {
             }
             Divider()
             Button("Search web for this device") { store.searchWeb(for: node) }
+            Button("Copy Wireshark capture recipe") { store.copyCaptureRecipe(for: node) }
         }
         .animation(.easeOut(duration: 0.35), value: isArrival)
         .help(node.name + (node.speedLabel.isEmpty ? "" : " · \(node.speedLabel)"))

@@ -48,6 +48,12 @@ struct ToolboxView: View {
                  note: "Cable e-marker, plug orientation, tunnel state per receptacle.",
                  runnable: true),
         ]),
+        ("Packet capture", [
+            Tool(title: "Raw USB capture — the macOS truth",
+                 command: "# No software USB tap exists on modern macOS (XHC20 died with Catalina, never on Apple Silicon). Right-click any device card → 'Copy Wireshark capture recipe' for the Linux-VM/usbmon workflow prefiltered to that device.",
+                 note: "Working paths: Linux VM + USB passthrough + usbmon + Wireshark, or a hardware analyzer (Beagle/OpenVizsla).",
+                 runnable: false),
+        ]),
         ("Live logs", [
             Tool(title: "USB subsystem log stream",
                  command: "log stream --predicate 'subsystem CONTAINS \"usb\"' --style compact",

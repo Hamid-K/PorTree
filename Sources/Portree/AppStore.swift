@@ -689,6 +689,44 @@ final class AppStore {
         appendEvent(EventRow(kind: .info, title: "Web search opened", detail: query, nodeID: node.id))
     }
 
+    /// Raw USB packet capture does not exist on modern macOS (the XHC20 tap
+    /// died with Catalina and never reached Apple Silicon) — the working path
+    /// is usbmon inside a Linux VM with the device passed through, or a
+    /// hardware analyzer. This puts the complete, device-prefiltered recipe
+    /// on the clipboard so the knowledge gap isn't the blocker.
+    func copyCaptureRecipe(for node: DeviceNode) {
+        let vid = node.vendorID.map { String(format: "0x%04llx", $0) } ?? "0x????"
+        let pid = node.productID.map { String(format: "0x%04llx", $0) } ?? "0x????"
+        let recipe = """
+        # Raw USB capture for: \(node.name) (\(vid):\(pid))
+        #
+        # macOS has no software USB tap (XHC20 was removed in Catalina; none on
+        # Apple Silicon). Two working options:
+        #
+        # OPTION A — Linux VM with USB passthrough (UTM / VMware Fusion):
+        #   1. Attach "\(node.name)" to the VM (USB passthrough).
+        #   2. In the guest:
+        #        sudo modprobe usbmon
+        #        sudo wireshark            # capture on usbmonX (X = bus number)
+        #   3. Wireshark display filter for just this device:
+        #        usb.idVendor == \(vid) && usb.idProduct == \(pid)
+        #      ...or after noting the device address on the bus:
+        #        usb.device_address == <addr>
+        #   CLI equivalent:
+        #        sudo tshark -i usbmon1 -Y 'usb.idVendor == \(vid) && usb.idProduct == \(pid)' -w capture.pcapng
+        #
+        # OPTION B — hardware analyzer (Total Phase Beagle, OpenVizsla):
+        #   inline between host and device; full-speed-accurate, no OS limits.
+        #
+        # What PorTree can watch natively instead: enumeration events, port
+        # error counters, throughput counters (storage/network), power
+        # allocation, overcurrent alerts — all in record mode.
+        """
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(recipe, forType: .string)
+        appendEvent(EventRow(kind: .info, title: "Capture recipe copied", detail: "\(node.name) · \(vid):\(pid)", nodeID: node.id))
+    }
+
     // MARK: Camera capability (UVC format list via AVFoundation — generic:
     // enumeration needs no TCC consent; only actual capture would)
 
