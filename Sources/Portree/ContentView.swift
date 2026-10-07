@@ -115,6 +115,11 @@ struct ContentView: View {
                 .help("Legend overlay")
 
                 Menu {
+                    Picker("Appearance", selection: $store.appearance) {
+                        ForEach(AppAppearance.allCases, id: \.self) { appearance in
+                            Text(appearance.label).tag(appearance)
+                        }
+                    }
                     Picker("Canvas", selection: $store.canvasBackground) {
                         ForEach(CanvasBackground.allCases, id: \.self) { background in
                             Text(background.label).tag(background)
@@ -143,6 +148,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $store.toolboxShown) { ToolboxView() }
         .environment(\.fontScale, store.fontScale)
+        .preferredColorScheme(store.appearance.colorScheme)
         .task { store.start() }
     }
 

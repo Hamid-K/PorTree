@@ -68,6 +68,9 @@ final class AppStore {
     var canvasBackground: CanvasBackground = .system {
         didSet { persist(canvasBackground.rawValue, "view.background") }
     }
+    var appearance: AppAppearance = .system {
+        didSet { persist(appearance.rawValue, "view.appearance") }
+    }
     /// UI font scale (0.85–1.3 — fixed card frames cap the useful range).
     var fontScale: CGFloat = 1.0 {
         didSet { persist(Double(fontScale), "view.fontScale") }
@@ -128,6 +131,10 @@ final class AppStore {
         }
         let storedScale = defaults.double(forKey: "portree.view.fontScale")
         if storedScale > 0 { fontScale = CGFloat(storedScale) }
+        if let raw = defaults.string(forKey: "portree.view.appearance"),
+           let restored = AppAppearance(rawValue: raw) {
+            appearance = restored
+        }
     }
 
     // MARK: Record mode (live throughput; real counters only)

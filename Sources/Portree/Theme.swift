@@ -96,6 +96,28 @@ enum CanvasBackground: String, CaseIterable {
     }
 }
 
+// MARK: - App appearance (independent of the canvas background)
+
+enum AppAppearance: String, CaseIterable {
+    case system, light, dark
+
+    var label: String {
+        switch self {
+        case .system: return "System"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
 // MARK: - Adjustable UI font scale
 
 private struct FontScaleKey: EnvironmentKey {

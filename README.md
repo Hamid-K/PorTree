@@ -6,6 +6,10 @@ Pure Swift + SwiftUI. Builds with SwiftPM and the Xcode Command Line Tools alone
 
 ![PorTree](docs/screenshot.png)
 
+Selected-device detail — live I/O while recording, camera capability, power allocation against the port limit, port numbers, and the Doctor's findings as tags:
+
+![Device detail](docs/screenshot-detail.png)
+
 ## Features
 
 | Area | What you get |
