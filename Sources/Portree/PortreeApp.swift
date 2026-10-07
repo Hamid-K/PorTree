@@ -53,6 +53,9 @@ struct PortreeApp: App {
                     .keyboardShortcut("r")
                 Button("Export Snapshot as JSON") { AppStore.shared.exportSnapshot() }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
+                Button("Export Graph as PNG") { GraphImageExporter.export(store: AppStore.shared, as: .png) }
+                    .keyboardShortcut("e", modifiers: [.command, .option])
+                Button("Export Graph as JPEG") { GraphImageExporter.export(store: AppStore.shared, as: .jpeg) }
                 Button("Toolbox") { AppStore.shared.toolboxShown.toggle() }
                     .keyboardShortcut("t")
                 Button("Record Throughput") { AppStore.shared.toggleRecording() }

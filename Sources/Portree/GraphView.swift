@@ -121,6 +121,15 @@ struct GraphView: View {
             }
             .overlay(alignment: .bottomTrailing) {
                 HStack(spacing: 6) {
+                    Menu {
+                        Button("Export as PNG") { GraphImageExporter.export(store: store, as: .png) }
+                        Button("Export as JPEG") { GraphImageExporter.export(store: store, as: .jpeg) }
+                    } label: {
+                        Image(systemName: "camera")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("Export the graph as an image")
                     Button { store.zoomAround(factor: 1 / 1.2) } label: { Image(systemName: "minus.magnifyingglass") }
                     Button { store.fitGraph(contentSize: layout.size) } label: { Text("Fit") }
                     Button { store.zoomAround(factor: 1.2) } label: { Image(systemName: "plus.magnifyingglass") }
@@ -135,6 +144,91 @@ struct GraphView: View {
                         .padding(10)
                 }
             }
+        }
+    }
+}
+
+// MARK: - Image export
+
+/// Renders the full graph (current orientation, fold state, background and
+/// edge labels — transient flow animation excluded) offscreen at 2× and saves
+/// PNG or JPEG to ~/Downloads.
+@MainActor
+enum GraphImageExporter {
+    enum ImageFormat: String {
+        case png, jpeg
+        var fileExtension: String { self == .png ? "png" : "jpg" }
+    }
+
+    static func export(store: AppStore, as format: ImageFormat) {
+        let layout = TreeLayout(
+            systemRoot: store.systemDisplayNode,
+            usbRoots: store.usbDisplayRoots,
+            tbRoots: store.tbDisplayRoots,
+            pciRoots: store.pciDisplayRoots,
+            collapsed: store.collapsed,
+            orientation: store.orientation
+        )
+        let content = ZStack(alignment: .topLeading) {
+            store.canvasBackground.color
+            EdgeCanvas(
+                edges: layout.edges,
+                horizontal: layout.orientation == .leftToRight,
+                dimmed: [],
+                flagged: store.issues.flaggedEdges,
+                flow: [:],
+                time: 0,
+                zoom: 1.0,   // full detail: edge labels on
+                background: store.canvasBackground
+            )
+            ForEach(layout.visibleNodes) { node in
+                let position = layout.positions[node.id] ?? .zero
+                NodeCard(
+                    node: node,
+                    collapsedCount: store.collapsed.contains(node.id) ? node.flattened().count - 1 : 0,
+                    isSelected: false,
+                    isGhost: store.ghostIDs.contains(node.id),
+                    isArrival: false,
+                    isReenumerated: false,
+                    isDimmed: false,
+                    isMatch: false
+                )
+                .frame(width: TreeLayout.nodeWidth, height: TreeLayout.nodeHeight)
+                .position(
+                    x: position.x + TreeLayout.nodeWidth / 2,
+                    y: position.y + TreeLayout.nodeHeight / 2
+                )
+            }
+        }
+        .frame(width: layout.size.width, height: layout.size.height)
+        .environment(store)
+
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 2.0
+        guard let cgImage = renderer.cgImage else {
+            store.appendEvent(EventRow(kind: .info, title: "Graph export failed", detail: "renderer produced no image"))
+            return
+        }
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        let data: Data? = switch format {
+        case .png: rep.representation(using: .png, properties: [:])
+        case .jpeg: rep.representation(using: .jpeg, properties: [.compressionFactor: 0.9])
+        }
+        guard let data else {
+            store.appendEvent(EventRow(kind: .info, title: "Graph export failed", detail: "could not encode \(format.rawValue)"))
+            return
+        }
+        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let url = downloads.appendingPathComponent("portree-graph-\(formatter.string(from: Date())).\(format.fileExtension)")
+        do {
+            try data.write(to: url)
+            store.appendEvent(EventRow(kind: .export, title: "Graph exported (\(format.rawValue.uppercased()))", detail: url.path))
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } catch {
+            store.appendEvent(EventRow(kind: .info, title: "Graph export failed", detail: "\(error)"))
         }
     }
 }
