@@ -54,6 +54,14 @@ final class AppStore {
     /// Bandwidth overlay (allocated share + live rates) — OFF by default,
     /// deliberately not persisted.
     var bandwidthOverlay = false
+    /// Mint power-allocation sparkline inside cards while recording — OFF by
+    /// default (the mA number chip is always shown regardless).
+    var powerOverlay = false
+
+    /// Live Σ of a hub/controller subtree's counter-bearing devices.
+    func aggregateRate(for node: DeviceNode) -> Double {
+        node.flattened().compactMap { rates[$0.id] }.reduce(0, +)
+    }
     var orientation: LayoutOrientation = .leftToRight {
         didSet { persist(orientation.rawValue, "view.orientation") }
     }

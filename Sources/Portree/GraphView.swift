@@ -586,14 +586,22 @@ private struct NodeCard: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if store.isRecording, let samples = store.series[node.id], samples.contains(where: { $0 > 0 }) {
-                Sparkline(samples: Array(samples.suffix(60)), color: node.tier.color)
-                    .frame(height: 13)
-                    .padding(.horizontal, 9)
-                    .padding(.bottom, 2)
-                    .opacity(0.55)
-                    .allowsHitTesting(false)
+            VStack(spacing: 1) {
+                if store.isRecording, store.powerOverlay,
+                   let power = store.powerSeries[node.id], power.contains(where: { $0 > 0 }) {
+                    Sparkline(samples: Array(power.suffix(60)), color: .mint)
+                        .frame(height: 8)
+                        .opacity(0.6)
+                }
+                if store.isRecording, let samples = store.series[node.id], samples.contains(where: { $0 > 0 }) {
+                    Sparkline(samples: Array(samples.suffix(60)), color: node.tier.color)
+                        .frame(height: 13)
+                        .opacity(0.55)
+                }
             }
+            .padding(.horizontal, 9)
+            .padding(.bottom, 2)
+            .allowsHitTesting(false)
         }
         .shadow(
             color: isArrival ? Color.yellow.opacity(0.8) : (isMatch ? Color.yellow.opacity(0.5) : .clear),
@@ -676,6 +684,11 @@ enum TagList {
         }
         if store.isRecording, let rate = store.rates[node.id], rate > 1024 {
             tags.append(Tag(text: Theme.rate(rate), color: .green))
+        } else if store.isRecording, node.isHub || node.kind == .usbController {
+            let aggregate = store.aggregateRate(for: node)
+            if aggregate > 1024 {
+                tags.append(Tag(text: "Σ \(Theme.rate(aggregate))", color: .green))
+            }
         }
         if store.bandwidthOverlay, let share = store.allocatedShare(of: node) {
             tags.append(Tag(text: "alloc \(Int(share * 100))%", color: .teal))

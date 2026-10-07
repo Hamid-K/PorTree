@@ -120,10 +120,12 @@ struct ContentView: View {
                             Text(background.label).tag(background)
                         }
                     }
+                    Divider()
+                    Toggle("Power sparkline in cards (recording)", isOn: $store.powerOverlay)
                 } label: {
                     Image(systemName: "circle.lefthalf.filled")
                 }
-                .help("Canvas background")
+                .help("Canvas background · overlays")
 
                 Toggle(isOn: $store.drawerShown) {
                     Image(systemName: "list.bullet.rectangle")
