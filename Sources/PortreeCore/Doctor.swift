@@ -199,17 +199,15 @@ public enum Doctor {
         return Report(byNode: byNode, flaggedEdges: flaggedEdges)
     }
 
-    /// What the device claims it can do, from bcdUSB. Conservative mapping;
-    /// nil when unknown (then no throttle/cap rule fires).
+    /// PROVABLE minimum capability. bcdUSB is a spec *revision*, not a speed:
+    /// plenty of 5 Gb/s parts report 3.10/3.20, and plenty of 12 Mb/s HID
+    /// devices report 2.00 — mapping revisions to their maximum speed fires
+    /// false warnings on healthy hardware. The only safe inference is the
+    /// floor: a ≥3.0-revision device is guaranteed SuperSpeed-capable
+    /// (5 Gb/s). Anything else: stay silent (the file's honesty rule).
     private static func capabilityBps(_ node: DeviceNode) -> Int64? {
         guard node.kind == .usbDevice, let bcd = node.properties["bcdUSB"]?.intValue else { return nil }
-        switch bcd {
-        case ..<0x0200: return 12_000_000
-        case ..<0x0300: return 480_000_000
-        case 0x0300..<0x0310: return 5_000_000_000
-        case 0x0310..<0x0320: return 10_000_000_000
-        default: return 20_000_000_000
-        }
+        return bcd >= 0x0300 ? 5_000_000_000 : nil
     }
 
     private static func walk(

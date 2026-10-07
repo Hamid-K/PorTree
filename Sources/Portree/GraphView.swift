@@ -10,6 +10,46 @@ import PortreeCore
 struct GraphView: View {
     @Environment(AppStore.self) private var store
     @State private var dragStart: CGSize?
+    @State private var gestureZoom: CGFloat = 1.0
+
+    @ViewBuilder
+    private func graphContent(layout: TreeLayout, search: (matches: Set<UInt64>, visible: Set<UInt64>)?) -> some View {
+        ZStack(alignment: .topLeading) {
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !store.isRecording)) { timeline in
+                EdgeCanvas(
+                    edges: layout.edges,
+                    horizontal: layout.orientation == .leftToRight,
+                    dimmed: search.map { s in
+                        Set(layout.edges.filter { !s.visible.contains($0.childID) }.map(\.id))
+                    } ?? [],
+                    flagged: store.issues.flaggedEdges,
+                    flow: store.isRecording ? store.rates : [:],
+                    time: timeline.date.timeIntervalSinceReferenceDate,
+                    zoom: store.zoom,
+                    background: store.canvasBackground
+                )
+            }
+
+            ForEach(layout.visibleNodes) { node in
+                let position = layout.positions[node.id] ?? .zero
+                NodeCard(
+                    node: node,
+                    collapsedCount: store.collapsed.contains(node.id) ? node.flattened().count - 1 : 0,
+                    isSelected: store.selection == node.id,
+                    isGhost: store.ghostIDs.contains(node.id),
+                    isArrival: store.arrivalIDs.contains(node.id),
+                    isReenumerated: store.reenumeratedIDs.contains(node.id),
+                    isDimmed: search.map { !$0.visible.contains(node.id) } ?? false,
+                    isMatch: search.map { $0.matches.contains(node.id) } ?? false
+                )
+                .frame(width: TreeLayout.nodeWidth, height: TreeLayout.nodeHeight)
+                .position(
+                    x: position.x + TreeLayout.nodeWidth / 2,
+                    y: position.y + TreeLayout.nodeHeight / 2
+                )
+            }
+        }
+    }
 
     var body: some View {
         let layout = TreeLayout(
@@ -26,44 +66,10 @@ struct GraphView: View {
             ZStack(alignment: .topLeading) {
                 store.canvasBackground.color
 
-                ZStack(alignment: .topLeading) {
-                    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !store.isRecording)) { timeline in
-                        EdgeCanvas(
-                            edges: layout.edges,
-                            horizontal: layout.orientation == .leftToRight,
-                            dimmed: search.map { s in
-                                Set(layout.edges.filter { !s.visible.contains($0.childID) }.map(\.id))
-                            } ?? [],
-                            flagged: store.issues.flaggedEdges,
-                            flow: store.isRecording ? store.rates : [:],
-                            time: timeline.date.timeIntervalSinceReferenceDate,
-                            zoom: store.zoom,
-                            background: store.canvasBackground
-                        )
-                    }
-
-                    ForEach(layout.visibleNodes) { node in
-                        let position = layout.positions[node.id] ?? .zero
-                        NodeCard(
-                            node: node,
-                            collapsedCount: store.collapsed.contains(node.id) ? node.flattened().count - 1 : 0,
-                            isSelected: store.selection == node.id,
-                            isGhost: store.ghostIDs.contains(node.id),
-                            isArrival: store.arrivalIDs.contains(node.id),
-                            isReenumerated: store.reenumeratedIDs.contains(node.id),
-                            isDimmed: search.map { !$0.visible.contains(node.id) } ?? false,
-                            isMatch: search.map { $0.matches.contains(node.id) } ?? false
-                        )
-                        .frame(width: TreeLayout.nodeWidth, height: TreeLayout.nodeHeight)
-                        .position(
-                            x: position.x + TreeLayout.nodeWidth / 2,
-                            y: position.y + TreeLayout.nodeHeight / 2
-                        )
-                    }
-                }
-                .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
-                .scaleEffect(store.zoom, anchor: .topLeading)
-                .offset(store.panOffset)
+                graphContent(layout: layout, search: search)
+                    .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
+                    .scaleEffect(store.zoom * gestureZoom, anchor: .topLeading)
+                    .offset(store.panOffset)
             }
             .clipped()
             .contentShape(Rectangle())
@@ -80,7 +86,11 @@ struct GraphView: View {
             )
             .simultaneousGesture(
                 MagnifyGesture()
-                    .onEnded { value in store.zoomAround(factor: value.magnification) }
+                    .onChanged { value in gestureZoom = value.magnification }  // live preview
+                    .onEnded { value in
+                        gestureZoom = 1.0
+                        store.zoomAround(factor: value.magnification)
+                    }
             )
             .background(
                 ScrollWheelCatcher { event in
@@ -147,7 +157,9 @@ private struct ScrollWheelCatcher: NSViewRepresentable {
     /// whose cursor is inside this view's frame, and consumes them.
     final class WheelView: NSView {
         var onWheel: ((WheelEvent) -> Void)?
-        private var monitor: Any?
+        // nonisolated(unsafe): deinit is nonisolated and NSEvent.removeMonitor
+        // only needs the token; the monitor is installed/removed on main.
+        private nonisolated(unsafe) var monitor: Any?
 
         override var isFlipped: Bool { true }  // top-left origin, matches SwiftUI
         override func hitTest(_ point: NSPoint) -> NSView? { nil }  // clicks pass through
@@ -177,7 +189,9 @@ private struct ScrollWheelCatcher: NSViewRepresentable {
             monitor = nil
         }
 
-        deinit { removeMonitor() }
+        deinit {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+        }
     }
 
     func makeNSView(context: Context) -> WheelView {

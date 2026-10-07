@@ -15,7 +15,9 @@ public final class BandwidthSampler: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private let onSample: Handler
 
-    private var lastStorage: [UInt64: Int64] = [:]   // nodeID → total bytes
+    // Keyed by the DRIVER's entry ID (not the attributed node): two storage
+    // drivers under one device must not overwrite each other's baseline.
+    private var lastStorage: [UInt64: (node: UInt64, total: Int64)] = [:]
     private var lastNIC: [String: (node: UInt64, total: UInt64)] = [:]
     private var lastDate: Date?
 
@@ -64,10 +66,11 @@ public final class BandwidthSampler: @unchecked Sendable {
                   // NVMe → the IONVMeController node (internal or enclosure).
                   let nodeID = Registry.ancestorID(of: driver, conformingToAny: ["IOUSBHostDevice", "IONVMeController", "IOPCIDevice"])
             else { continue }
-            if let previous = lastStorage[nodeID], total >= previous {
-                rates[nodeID, default: 0] += Double(total - previous) / elapsed
+            let driverID = Registry.entryID(of: driver)
+            if let previous = lastStorage[driverID], previous.node == nodeID, total >= previous.total {
+                rates[nodeID, default: 0] += Double(total - previous.total) / elapsed
             }
-            lastStorage[nodeID] = total
+            lastStorage[driverID] = (nodeID, total)
         }
 
         // Network: interface byte counters mapped via IONetworkInterface's

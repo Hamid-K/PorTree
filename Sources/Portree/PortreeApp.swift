@@ -64,11 +64,12 @@ struct PortreeApp: App {
                     .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
             }
             CommandGroup(after: .sidebar) {
-                Button("Zoom In") { AppStore.shared.zoom = min(2.0, AppStore.shared.zoom * 1.2) }
+                // Through zoomAround so the viewport center stays put.
+                Button("Zoom In") { AppStore.shared.zoomAround(factor: 1.2) }
                     .keyboardShortcut("+", modifiers: .command)
-                Button("Zoom Out") { AppStore.shared.zoom = max(0.25, AppStore.shared.zoom / 1.2) }
+                Button("Zoom Out") { AppStore.shared.zoomAround(factor: 1 / 1.2) }
                     .keyboardShortcut("-", modifiers: .command)
-                Button("Actual Size") { AppStore.shared.zoom = 1.0 }
+                Button("Actual Size") { AppStore.shared.zoomAround(factor: 1.0 / AppStore.shared.zoom) }
                     .keyboardShortcut("0", modifiers: .command)
             }
         }

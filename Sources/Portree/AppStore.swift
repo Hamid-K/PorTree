@@ -89,17 +89,27 @@ final class AppStore {
 
     private func apply(_ new: Snapshot) {
         let diff = DiffEngine.diff(old: previousSnapshot, new: new)
+        let newByID = new.allByID()
 
-        // Re-enumerations: one amber presentation, not ghost + new node.
+        // Re-enumerations within one debounce window (electrical bounce).
         for item in diff.reenumerated {
-            reenumeratedIDs.insert(item.newID)
-            appendEvent(EventRow(
-                kind: .reenumerated,
-                title: "Re-enumerated — \(item.oldNode.name)",
-                detail: item.confident ? "same identity, new session" : "identity match low-confidence (no serial)",
-                nodeID: item.newID
-            ))
-            expire(after: 2.5) { $0.reenumeratedIDs.remove(item.newID) }
+            markReenumerated(id: item.newID, name: item.oldNode.name, confident: item.confident)
+        }
+
+        // Human-speed replugs land in a LATER snapshot than the removal: an
+        // arrival whose identity matches a live ghost collapses into one
+        // re-enumeration — never ghost + new node side by side (DESIGN §4).
+        var arrivals = diff.addedIDs
+        for id in arrivals {
+            guard let node = newByID[id], let identity = node.deviceIdentity,
+                  let ghostIndex = ghostNodes.firstIndex(where: {
+                      $0.node.deviceIdentity?.key == identity.key
+                  }) else { continue }
+            let ghost = ghostNodes[ghostIndex].node
+            ghostNodes.remove(at: ghostIndex)
+            ghostIDs.remove(ghost.id)
+            arrivals.remove(id)
+            markReenumerated(id: id, name: ghost.name, confident: identity.confident)
         }
 
         // Removals: keep a ghost in place for 4 s (flaky-cable debugging).
@@ -112,11 +122,12 @@ final class AppStore {
             expire(after: 4.0) {
                 $0.ghostIDs.remove(node.id)
                 $0.ghostNodes.removeAll { $0.node.id == node.id }
+                $0.reindex()  // indexes must not keep pointing at expired ghosts
             }
         }
 
         // Arrivals: glow briefly.
-        for id in diff.addedIDs {
+        for id in arrivals {
             arrivalIDs.insert(id)
             expire(after: 1.6) { $0.arrivalIDs.remove(id) }
         }
@@ -140,6 +151,17 @@ final class AppStore {
 
     private func previousParent(of id: UInt64) -> UInt64? {
         parentOf[id]
+    }
+
+    private func markReenumerated(id: UInt64, name: String, confident: Bool) {
+        reenumeratedIDs.insert(id)
+        appendEvent(EventRow(
+            kind: .reenumerated,
+            title: "Re-enumerated — \(name)",
+            detail: confident ? "same identity, new session" : "identity match low-confidence (no serial)",
+            nodeID: id
+        ))
+        expire(after: 2.5) { $0.reenumeratedIDs.remove(id) }
     }
 
     private func reindex() {
@@ -202,6 +224,9 @@ final class AppStore {
         isRecording = true
         recordingStart = Date()
         sampleCount = 0
+        series = [:]        // a new session must not inherit old sparklines/peaks
+        totalSeries = []
+        rates = [:]
         if sampler == nil {
             sampler = BandwidthSampler { rates, date in
                 Task { @MainActor in AppStore.shared.ingest(rates: rates, at: date) }
@@ -303,22 +328,39 @@ final class AppStore {
 
     // MARK: Events
 
+    private var lastRawDevice: (name: String, date: Date)?
+
     private func handleRaw(_ raw: [RawEvent]) {
         guard !logPaused else { return }
         for event in raw {
             let kind: EventRow.Kind = event.kind == .added ? .connected : .disconnected
-            let title = "\(kind == .connected ? "Connected" : "Disconnected") — \(event.name.isEmpty ? event.className : event.name)"
-            // Flood coalescing: a device flapping within 3 s becomes one ×N row.
-            if var last = events.last, last.kind == kind, last.title == title,
-               event.date.timeIntervalSince(last.date) < 3.0 {
-                last.count += 1
-                last.date = event.date
-                events[events.count - 1] = last
+            let deviceName = event.name.isEmpty ? event.className : event.name
+            // Flood coalescing keys on the DEVICE, not kind+title: a flapping
+            // device alternates connected/disconnected, and that alternation
+            // is exactly the storm the ×N row exists for.
+            if let last = lastRawDevice, last.name == deviceName,
+               event.date.timeIntervalSince(last.date) < 3.0,
+               var lastRow = events.last {
+                lastRow.count += 1
+                lastRow.date = event.date
+                if lastRow.kind != kind {
+                    lastRow = EventRow(
+                        kind: .reenumerated,
+                        title: "Flapping — \(deviceName)",
+                        detail: "×\(lastRow.count) in <3 s — flaky link or power",
+                        nodeID: kind == .connected ? event.entryID : nil,
+                        date: event.date
+                    )
+                    lastRow.count = (events.last?.count ?? 1) + 1
+                }
+                events[events.count - 1] = lastRow
+                lastRawDevice = (deviceName, event.date)
                 continue
             }
+            lastRawDevice = (deviceName, event.date)
             appendEvent(EventRow(
                 kind: kind,
-                title: title,
+                title: "\(kind == .connected ? "Connected" : "Disconnected") — \(deviceName)",
                 detail: event.isThunderbolt ? "Thunderbolt" : event.className,
                 nodeID: kind == .connected ? event.entryID : nil,
                 date: event.date

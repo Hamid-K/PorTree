@@ -97,6 +97,17 @@ Sequencing rationale: usefulness ships early (outline + inspector by M2, live by
 | Large trees (>100 devices on loaded dock chains) | Gate glow/edge-labels by node count & zoom; virtualize only if ever needed |
 | ~~Name collision~~ | Resolved: renamed to **Portree** (2026-10-07) |
 
+## 5b. Known gaps (adversarial review, 2026-10-07)
+
+A 10-agent review (27 findings) confirmed six majors — **all fixed** (sampler baseline keying, bcdUSB capability honesty, ghost↔arrival re-enumeration collapse across snapshots, index refresh on ghost expiry, flap coalescing, plus pinch/menu-zoom polish). Remaining accepted gaps, in rough priority order:
+
+- USB↔TB receptacle **cross-link chips** (Socket ID ↔ Port-USB-C ↔ XHCI) and DP-tunnel monitor naming from EDID — data verified available, UI not wired
+- Cross-launch **replug history** (persisted per-identity snapshots + descriptor diffing); History tab is session-scoped today
+- `Port-USB-C` interest notifications (cable/orientation changes that add no device) and speed-retrain/TB-link-change event rows
+- Twin-merge hardening for non-unique ContainerIDs; TT-contention should also read the merged USB2 personality's protocol
+- Ghosts render only for the top-most removed node of an unplugged subtree
+- JSONL rows persist with count 1 (flap ×N is in-memory only); `controller-statistics` live layer; receptacle naming via `UsbIOPort` instead of bus-byte heuristic
+
 ## 6. Open questions (decide before open-sourcing)
 
 1. ~~**Name.**~~ **Resolved 2026-10-07: the app is named _Portree_** (port + tree). The repo folder may still be called `Hubble` locally — rename at will; nothing in the build depends on the folder name.
