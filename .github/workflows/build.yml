@@ -22,6 +22,25 @@ jobs:
       - name: Test
         run: make test
 
+      # The unit suite covers the pure logic; this exercises the real IOKit
+      # path end-to-end against the runner's own registry (a VM — few or no
+      # USB devices, which is itself a case the app must survive).
+      - name: Headless smoke test
+        run: |
+          BIN="$(swift build -c release --show-bin-path)/Portree"
+          "$BIN" --dump > /tmp/smoke.json
+          python3 - <<'EOF'
+          import json
+          s = json.load(open('/tmp/smoke.json'))
+          assert 'usbRoots' in s and 'tbRoots' in s and 'pciRoots' in s, 'snapshot shape'
+          assert s.get('systemNode'), 'system node missing'
+          print('smoke ok:', len(s['usbRoots']), 'usb roots ·',
+                len(s['tbRoots']), 'tb domains ·', len(s['pciRoots']), 'pci roots')
+          EOF
+          "$BIN" --export-graph /tmp/smoke.png && test -s /tmp/smoke.png \
+            && echo "graph render ok" \
+            || echo "::warning::headless graph render unavailable on this runner"
+
       - name: Package Portree.app
         run: |
           make icon

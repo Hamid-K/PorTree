@@ -6,7 +6,7 @@ public enum NodeKind: String, Sendable, Codable, Hashable {
 
 /// Device family driving the icon; orthogonal to `Tier` (color).
 public enum DeviceCategory: String, Sendable, Codable, Hashable {
-    case controller, hub, hid, mouse, storage, audio, speaker, video, network, display
+    case controller, hub, dock, hid, mouse, storage, audio, speaker, video, network, display
     case printer, smartCard, wireless, tbSwitch, tbDomain, adapter, vendor, unknown, pci, system
 }
 

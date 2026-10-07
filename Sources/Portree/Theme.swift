@@ -37,6 +37,7 @@ extension DeviceCategory {
         switch self {
         case .controller: return "cpu"
         case .hub: return "cable.connector.horizontal"
+        case .dock: return "dock.rectangle"
         case .hid: return "keyboard"
         case .mouse: return "computermouse"
         case .storage: return "externaldrive"

@@ -178,6 +178,18 @@ public enum USBTopologyBuilder {
         }
 
         let linkSpeed = props["UsbLinkSpeed"]?.intValue ?? 0
+        var category = classify(props: props, interfaces: interfaces, name: registryName)
+        // A hub fanning out to three or more distinct device families is
+        // functionally a dock (USB-C docks, monitor hubs) — derived from the
+        // subtree, never from vendor names.
+        if category == .hub {
+            let families = Set(
+                children.flatMap { $0.flattened() }
+                    .map(\.category)
+                    .filter { $0 != .hub && $0 != .dock && $0 != .unknown && $0 != .vendor }
+            )
+            if families.count >= 3 { category = .dock }
+        }
         var (name, subtitle) = displayName(props: props, registryName: registryName)
         // Port number on the parent = last nibble of the locationID path.
         if let location = props["locationID"]?.intValue, let port = Format.lastPort(locationID: location) {
@@ -189,7 +201,7 @@ public enum USBTopologyBuilder {
             name: name,
             subtitle: subtitle,
             className: Registry.className(of: entry),
-            category: classify(props: props, interfaces: interfaces, name: name),
+            category: category,
             tier: Format.tier(forBps: linkSpeed),
             speedLabel: Format.speedLabel(bps: linkSpeed),
             linkSpeedBps: linkSpeed,

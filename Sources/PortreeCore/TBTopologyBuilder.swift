@@ -75,6 +75,8 @@ public enum TBTopologyBuilder {
 
         var dpInCount: Int64 = 0    // video consumed here → this device is a display
         var dpOutCount: Int64 = 0   // video re-emitted → DP adapter / dock output
+        var pcieDownCount: Int64 = 0
+        var usbDownCount: Int64 = 0
         let children = Registry.children(of: entry, plane: "IOService")
         defer { children.forEach { IOObjectRelease($0) } }
         for port in children {
@@ -87,6 +89,8 @@ public enum TBTopologyBuilder {
             if let adapterType = portProps["Adapter Type"]?.intValue {
                 if adapterType == 917_761 { dpInCount += 1 }
                 if adapterType == 917_762 { dpOutCount += 1 }
+                if adapterType == 1_048_833 { pcieDownCount += 1 }
+                if adapterType == 2_097_409 || adapterType == 2_162_945 { usbDownCount += 1 }
             }
 
             // Active lane-port link speed: Link Bandwidth is in 0.1 Gb/s units
@@ -129,11 +133,14 @@ public enum TBTopologyBuilder {
         if !isRoot, dpInCount + dpOutCount > 0 {
             props["Portree DPTunnels"] = .int(dpInCount + dpOutCount)
         }
-        // Icon family from what the device DOES with video: consuming DP
-        // makes it a display (the Dell U2725QE), only re-emitting makes it a
-        // DP adapter/dock output (the Cable Matters TB3→DP).
+        // Icon family from the switch's adapter inventory — all generic
+        // registry facts, no vendor matching:
+        //  - consumes DP (DP-IN)                        → display
+        //  - fans out PCIe, or USB + DP-OUT together    → dock
+        //  - only re-emits DP                           → adapter
         let category: DeviceCategory = isRoot ? .tbSwitch
             : dpInCount > 0 ? .display
+            : (pcieDownCount > 0 || (usbDownCount > 0 && dpOutCount > 0)) ? .dock
             : dpOutCount > 0 ? .adapter
             : .tbSwitch
         // Apple Silicon host switches self-report Device Model Name = "iOS";
