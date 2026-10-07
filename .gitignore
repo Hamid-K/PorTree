@@ -5,3 +5,6 @@ dist/
 xcuserdata/
 .swiftpm/
 *.app
+
+# Claude Code local settings (holds personal tokens — never commit)
+.claude/settings.local.json
