@@ -145,6 +145,11 @@ private struct DecodedTab: View {
                 }
                 row("Tunneled", node.isTunneled ? "Yes (USB4/TB tunnel)" : (node.kind == .tbSwitch ? "native fabric" : "No"))
             }
+            if let displayMode = store.displayModes[node.id] {
+                group("Display") {
+                    row("Mode", displayMode)
+                }
+            }
             group("Power & ownership") {
                 if let power = node.powerSinkMA {
                     row("Power sink", "\(Format.milliamps(power))  /  3000 mA port limit")

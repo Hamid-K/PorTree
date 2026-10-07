@@ -20,6 +20,9 @@ final class AppStore {
     private(set) var events: [EventRow] = []
     private(set) var lastRefresh: Date?
     private(set) var issues = Doctor.Report.empty
+    /// Live display mode per display node ("3840×2160 @ 120 Hz · DisplayPort
+    /// · TB/USB4 tunnel"), matched via NSScreen names + CoreGraphics modes.
+    private(set) var displayModes: [UInt64: String] = [:]
 
     // Transient presentation state
     private(set) var ghostIDs: Set<UInt64> = []
@@ -190,6 +193,7 @@ final class AppStore {
 
         issues = Doctor.diagnose(snapshot: new)
         recomputeBaselineDiff()
+        updateDisplayModes()
 
         if selection == nil {
             // Defer: assigning selection inside the same transaction as the
@@ -514,6 +518,53 @@ final class AppStore {
             }
         }
         return (matches, visible)
+    }
+
+    // MARK: Display modes (resolution / refresh / connection)
+
+    private func updateDisplayModes() {
+        var result: [UInt64: String] = [:]
+        var matchedScreens: Set<CGDirectDisplayID> = []
+
+        func mode(of screen: NSScreen) -> (id: CGDirectDisplayID, text: String)? {
+            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+            else { return nil }
+            let displayID = CGDirectDisplayID(number.uint32Value)
+            guard let mode = CGDisplayCopyDisplayMode(displayID) else { return nil }
+            var text = "\(mode.pixelWidth)×\(mode.pixelHeight)"
+            if mode.refreshRate > 0 { text += String(format: " @ %.0f Hz", mode.refreshRate) }
+            return (displayID, text)
+        }
+
+        // External displays we actually have nodes for: TB/USB4 monitors
+        // (DP-IN switches) and DisplayLink devices. Name-matched to NSScreen.
+        for node in allNodes.values where node.category == .display || node.isDisplayLink {
+            let nodeName = node.name.lowercased()
+            guard nodeName.count >= 4,
+                  let screen = NSScreen.screens.first(where: {
+                      let screenName = $0.localizedName.lowercased()
+                      return screenName.contains(nodeName) || nodeName.contains(screenName)
+                  }),
+                  let current = mode(of: screen) else { continue }
+            matchedScreens.insert(current.id)
+            let connection = node.isDisplayLink
+                ? "USB · DisplayLink"
+                : (node.kind == .tbSwitch ? "DisplayPort · TB/USB4 tunnel" : "DisplayPort")
+            result[node.id] = "\(current.text) · \(connection)"
+        }
+
+        // The built-in panel has no USB/TB/PCI node — it belongs to the SoC.
+        if let system = systemDisplayNode {
+            let builtIn = NSScreen.screens.compactMap { screen -> String? in
+                guard let current = mode(of: screen),
+                      !matchedScreens.contains(current.id),
+                      CGDisplayIsBuiltin(current.id) != 0 else { return nil }
+                return "\(current.text) · internal"
+            }
+            if let first = builtIn.first { result[system.id] = first }
+        }
+
+        displayModes = result
     }
 
     // MARK: Baseline diff (capture/load a frozen state, compare against live)

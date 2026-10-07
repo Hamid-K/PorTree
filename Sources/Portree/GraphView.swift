@@ -556,7 +556,9 @@ private struct NodeCard: View {
                             color: .mint
                         )
                     }
-                    if node.videoTunnelCount > 0 {
+                    if let displayMode = store.displayModes[node.id] {
+                        CapsuleTag(text: displayMode, color: .pink)
+                    } else if node.videoTunnelCount > 0 {
                         CapsuleTag(text: "DP ×\(node.videoTunnelCount)", color: .pink)
                     }
                     if node.isDisplayLink { CapsuleTag(text: "DisplayLink", color: .pink) }
