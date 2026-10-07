@@ -92,6 +92,10 @@ struct PortreeApp: App {
                     .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
                 Button("Collapse All") { AppStore.shared.collapseAll() }
                     .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                Button("Expand All Tags") { AppStore.shared.expandAllTags() }
+                    .keyboardShortcut(.rightArrow, modifiers: [.command, .control])
+                Button("Collapse All Tags") { AppStore.shared.collapseAllTags() }
+                    .keyboardShortcut(.leftArrow, modifiers: [.command, .control])
             }
             CommandGroup(after: .sidebar) {
                 // Through zoomAround so the viewport center stays put.

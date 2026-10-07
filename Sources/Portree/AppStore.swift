@@ -516,6 +516,22 @@ final class AppStore {
         pendingScrollTarget = id
     }
 
+    /// Expand every card whose tags actually overflow the compact row.
+    func expandAllTags() {
+        withAnimation(.snappy) {
+            for node in allNodes.values {
+                let tags = TagList.tags(node: node, store: self, verbose: false)
+                if tags.count > TagMetrics.fittingPrefix(tags) {
+                    expandedTags.insert(node.id)
+                }
+            }
+        }
+    }
+
+    func collapseAllTags() {
+        withAnimation(.snappy) { expandedTags.removeAll() }
+    }
+
     func toggleTagExpansion(_ id: UInt64) {
         withAnimation(.snappy) {
             if expandedTags.contains(id) { expandedTags.remove(id) } else { expandedTags.insert(id) }

@@ -121,6 +121,9 @@ struct ContentView: View {
                         }
                     }
                     Divider()
+                    Button("Expand All Tags") { store.expandAllTags() }
+                    Button("Collapse All Tags") { store.collapseAllTags() }
+                    Divider()
                     Toggle("Power sparkline in cards (recording)", isOn: $store.powerOverlay)
                 } label: {
                     Image(systemName: "circle.lefthalf.filled")
