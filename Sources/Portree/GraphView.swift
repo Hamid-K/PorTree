@@ -686,8 +686,11 @@ enum TagList {
                 ))
             }
         }
-        if store.isRecording, let rate = store.rates[node.id], rate > 1024 {
-            tags.append(Tag(text: Theme.rate(rate), color: .green))
+        if store.isRecording, let rate = store.rates[node.id] {
+            // An entry existing means this node HAS counters; 0 = idle.
+            tags.append(rate > 1024
+                ? Tag(text: Theme.rate(rate), color: .green)
+                : Tag(text: "0 B/s", color: .secondary))
         } else if store.isRecording, node.isHub || node.kind == .usbController {
             let aggregate = store.aggregateRate(for: node)
             if aggregate > 1024 {
@@ -871,43 +874,50 @@ struct Sparkline: View {
 
     var body: some View {
         GeometryReader { geo in
-            let window = Array(samples.suffix(capacity))
-            let stepX = geo.size.width / CGFloat(max(capacity - 1, 1))
-            let peak = max(window.max() ?? 1, 1)
-            let count = window.count
-            // Absolute x of window[j]: its global tick index × stepX.
-            func x(_ j: Int) -> CGFloat {
-                CGFloat(tick - (count - 1 - j)) * stepX
-            }
-            func y(_ j: Int) -> CGFloat {
-                geo.size.height * (1 - CGFloat(window[j] / peak))
-            }
-
-            ZStack {
-                if filled, count > 1 {
-                    Path { path in
-                        path.move(to: CGPoint(x: x(0), y: geo.size.height))
-                        for j in 0..<count { path.addLine(to: CGPoint(x: x(j), y: y(j))) }
-                        path.addLine(to: CGPoint(x: x(count - 1), y: geo.size.height))
-                        path.closeSubpath()
-                    }
-                    .fill(LinearGradient(
-                        colors: [color.opacity(0.32), color.opacity(0.02)],
-                        startPoint: .top, endPoint: .bottom
-                    ))
-                }
-                if count > 1 {
-                    Path { path in
-                        path.move(to: CGPoint(x: x(0), y: y(0)))
-                        for j in 1..<count { path.addLine(to: CGPoint(x: x(j), y: y(j))) }
-                    }
-                    .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
-                }
-            }
-            .offset(x: geo.size.width - stepX - CGFloat(tick) * stepX)
-            .animation(.linear(duration: 1.0), value: tick)
+            chart(in: geo.size)
+                .offset(x: geo.size.width - (geo.size.width / CGFloat(max(capacity - 1, 1))) - CGFloat(tick) * (geo.size.width / CGFloat(max(capacity - 1, 1))))
+                .animation(.linear(duration: 1.0), value: tick)
         }
         .clipped()
+    }
+
+    private func points(in size: CGSize) -> [CGPoint] {
+        let window = Array(samples.suffix(capacity))
+        guard window.count > 1 else { return [] }
+        let stepX = size.width / CGFloat(max(capacity - 1, 1))
+        let peak = max(window.max() ?? 1, 1)
+        return window.enumerated().map { j, value in
+            CGPoint(
+                x: CGFloat(tick - (window.count - 1 - j)) * stepX,  // absolute x: global tick index
+                y: size.height * (1 - CGFloat(value / peak))
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func chart(in size: CGSize) -> some View {
+        let pts = points(in: size)
+        ZStack {
+            if filled, pts.count > 1 {
+                Path { path in
+                    path.move(to: CGPoint(x: pts[0].x, y: size.height))
+                    for point in pts { path.addLine(to: point) }
+                    path.addLine(to: CGPoint(x: pts[pts.count - 1].x, y: size.height))
+                    path.closeSubpath()
+                }
+                .fill(LinearGradient(
+                    colors: [color.opacity(0.32), color.opacity(0.02)],
+                    startPoint: .top, endPoint: .bottom
+                ))
+            }
+            if pts.count > 1 {
+                Path { path in
+                    path.move(to: pts[0])
+                    for point in pts.dropFirst() { path.addLine(to: point) }
+                }
+                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+            }
+        }
     }
 }
 

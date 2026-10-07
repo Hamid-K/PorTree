@@ -62,6 +62,9 @@ public final class BandwidthSampler: @unchecked Sendable {
         guard elapsed > 0.1 else { return }
 
         var rates: [UInt64: Double] = [:]
+        // Every node we CAN monitor gets an entry (0 when idle), so the UI
+        // can distinguish "monitored, idle" from "no counters exist".
+        var monitored: Set<UInt64> = []
 
         // Storage: bytes read+written per IOBlockStorageDriver, attributed to
         // the USB device or tunneled PCI device above it.
@@ -76,6 +79,7 @@ public final class BandwidthSampler: @unchecked Sendable {
                   let nodeID = Registry.ancestorID(of: driver, conformingToAny: ["IOUSBHostDevice", "IONVMeController", "IOPCIDevice"])
             else { continue }
             let driverID = Registry.entryID(of: driver)
+            monitored.insert(nodeID)
             if let previous = lastStorage[driverID], previous.node == nodeID, total >= previous.total {
                 rates[nodeID, default: 0] += Double(total - previous.total) / elapsed
             }
@@ -92,6 +96,7 @@ public final class BandwidthSampler: @unchecked Sendable {
                   let nodeID = Registry.ancestorID(of: interface, conformingToAny: ["IOUSBHostDevice", "IOPCIDevice"])
             else { continue }
             nodeForBSDName[bsdName] = nodeID
+            monitored.insert(nodeID)
         }
 
         for (name, total) in interfaceByteTotals() {
@@ -103,6 +108,8 @@ public final class BandwidthSampler: @unchecked Sendable {
             }
             lastNIC[name] = (nodeID, total)
         }
+
+        for id in monitored where rates[id] == nil { rates[id] = 0 }
 
         // Power pass: allocations + overcurrent counters straight off the
         // device nodes (cheap: one matching sweep).
