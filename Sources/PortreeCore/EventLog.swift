@@ -5,7 +5,7 @@ import Foundation
 /// silently vanish from the log.
 public struct EventRow: Sendable, Codable, Identifiable, Hashable {
     public enum Kind: String, Sendable, Codable {
-        case connected, disconnected, reenumerated, rescan, info, export
+        case connected, disconnected, reenumerated, rescan, info, export, alert
     }
 
     public let id: UUID

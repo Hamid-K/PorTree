@@ -32,8 +32,10 @@ struct GraphView: View {
 
             ForEach(layout.visibleNodes) { node in
                 let position = layout.positions[node.id] ?? .zero
+                let cardHeight = layout.height(of: node.id)
                 NodeCard(
                     node: node,
+                    height: cardHeight,
                     collapsedCount: store.collapsed.contains(node.id) ? node.flattened().count - 1 : 0,
                     isSelected: store.selection == node.id,
                     isGhost: store.ghostIDs.contains(node.id),
@@ -42,10 +44,10 @@ struct GraphView: View {
                     isDimmed: search.map { !$0.visible.contains(node.id) } ?? false,
                     isMatch: search.map { $0.matches.contains(node.id) } ?? false
                 )
-                .frame(width: TreeLayout.nodeWidth, height: TreeLayout.nodeHeight)
+                .frame(width: TreeLayout.nodeWidth, height: cardHeight)
                 .position(
                     x: position.x + TreeLayout.nodeWidth / 2,
-                    y: position.y + TreeLayout.nodeHeight / 2
+                    y: position.y + cardHeight / 2
                 )
             }
         }
@@ -58,7 +60,8 @@ struct GraphView: View {
             tbRoots: store.tbDisplayRoots,
             pciRoots: store.pciDisplayRoots,
             collapsed: store.collapsed,
-            orientation: store.orientation
+            orientation: store.orientation,
+            nodeHeights: TagMetrics.nodeHeights(store: store)
         )
         let search = store.searchResult
 
@@ -172,8 +175,10 @@ struct GraphCanvas: View {
             )
             ForEach(layout.visibleNodes) { node in
                 let position = layout.positions[node.id] ?? .zero
+                let cardHeight = layout.height(of: node.id)
                 NodeCard(
                     node: node,
+                    height: cardHeight,
                     collapsedCount: store.collapsed.contains(node.id) ? node.flattened().count - 1 : 0,
                     isSelected: store.selection == node.id,
                     isGhost: store.ghostIDs.contains(node.id),
@@ -182,10 +187,10 @@ struct GraphCanvas: View {
                     isDimmed: false,
                     isMatch: false
                 )
-                .frame(width: TreeLayout.nodeWidth, height: TreeLayout.nodeHeight)
+                .frame(width: TreeLayout.nodeWidth, height: cardHeight)
                 .position(
                     x: position.x + TreeLayout.nodeWidth / 2,
-                    y: position.y + TreeLayout.nodeHeight / 2
+                    y: position.y + cardHeight / 2
                 )
             }
         }
@@ -208,7 +213,8 @@ enum GraphImageExporter {
             tbRoots: store.tbDisplayRoots,
             pciRoots: store.pciDisplayRoots,
             collapsed: store.collapsed,
-            orientation: store.orientation
+            orientation: store.orientation,
+            nodeHeights: TagMetrics.nodeHeights(store: store)
         )
         let content = GraphCanvas(store: store, layout: layout)
             .environment(store)
@@ -469,6 +475,7 @@ private struct EdgeCanvas: View {
 private struct NodeCard: View {
     @Environment(AppStore.self) private var store
     let node: DeviceNode
+    let height: CGFloat
     let collapsedCount: Int
     let isSelected: Bool
     let isGhost: Bool
@@ -477,10 +484,45 @@ private struct NodeCard: View {
     let isDimmed: Bool
     let isMatch: Bool
 
-    private var subtreePowerMA: Int64? {
-        guard node.isHub || node.kind == .usbController else { return node.powerSinkMA }
-        let total = node.flattened().compactMap(\.powerSinkMA).reduce(0, +)
-        return total > 0 ? total : nil
+    /// Compact: one row of chips that fit, with a "+N…" pill when there are
+    /// more; expanded (pill tapped): the full list soft-wrapped — the layout
+    /// grows the card to match.
+    @ViewBuilder
+    private var tagArea: some View {
+        let tags = TagList.tags(node: node, store: store, verbose: false)
+        if store.expandedTags.contains(node.id) {
+            FlowLayout(spacing: 4) {
+                ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
+                    CapsuleTag(text: tag.text, color: tag.color)
+                }
+                overflowPill("less")
+            }
+        } else {
+            let fit = TagMetrics.fittingPrefix(tags)
+            HStack(spacing: 4) {
+                ForEach(Array(tags.prefix(fit).enumerated()), id: \.offset) { _, tag in
+                    CapsuleTag(text: tag.text, color: tag.color)
+                }
+                if tags.count > fit {
+                    overflowPill("+\(tags.count - fit)…")
+                }
+            }
+        }
+    }
+
+    private func overflowPill(_ label: String) -> some View {
+        Button {
+            store.toggleTagExpansion(node.id)
+        } label: {
+            Text(label)
+                .font(.system(size: 8.5, weight: .bold))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .foregroundStyle(.secondary)
+                .background(.quaternary, in: Capsule())
+                .fixedSize()
+        }
+        .buttonStyle(.plain)
     }
 
     var body: some View {
@@ -517,76 +559,11 @@ private struct NodeCard: View {
                 }
             }
 
-            HStack(spacing: 4) {
-                if !node.speedLabel.isEmpty {
-                    CapsuleTag(text: node.speedLabel, color: node.tier.color)
-                }
-                if isGhost {
-                    CapsuleTag(text: "removed", color: .red)
-                } else {
-                    if let diff = store.baselineDiff {
-                        if diff.addedIDs.contains(node.id) {
-                            CapsuleTag(text: "NEW", color: .green)
-                        } else if diff.changed.contains(where: { $0.id == node.id }) {
-                            CapsuleTag(text: "CHANGED", color: .yellow)
-                        }
-                    }
-                    if let nodeIssues = store.issues.byNode[node.id], !nodeIssues.isEmpty {
-                        CapsuleTag(
-                            text: "⚠︎ \(nodeIssues.count)",
-                            color: nodeIssues.contains { $0.severity == .problem } ? .red : .orange
-                        )
-                    }
-                    if store.isRecording, let rate = store.rates[node.id], rate > 1024 {
-                        CapsuleTag(text: Theme.rate(rate), color: .green)
-                    }
-                    if store.bandwidthOverlay, let share = store.allocatedShare(of: node) {
-                        CapsuleTag(text: "alloc \(Int(share * 100))%", color: .teal)
-                    }
-                    if let total = node.properties["Portree Ports Total"]?.intValue, total > 0 {
-                        let free = node.properties["Portree Ports Free"]?.intValue ?? 0
-                        CapsuleTag(
-                            text: "\(total - free)/\(total) ports",
-                            color: free == 0 ? .orange : .secondary
-                        )
-                    }
-                    if let power = subtreePowerMA {
-                        CapsuleTag(
-                            text: node.isHub || node.kind == .usbController ? "Σ \(power) mA" : "\(power) mA",
-                            color: .mint
-                        )
-                    }
-                    if let displayMode = store.displayModes[node.id] {
-                        CapsuleTag(text: displayMode, color: .pink)
-                    } else if node.videoTunnelCount > 0 {
-                        CapsuleTag(text: "DP ×\(node.videoTunnelCount)", color: .pink)
-                    }
-                    if let camera = store.cameraInfo[node.id] {
-                        CapsuleTag(text: camera.text, color: .pink)
-                        if camera.inUse {
-                            CapsuleTag(text: "● IN USE", color: .red)
-                        }
-                    }
-                    if node.isDisplayLink { CapsuleTag(text: "DisplayLink", color: .pink) }
-                    if node.kind == .system {
-                        if let tb = node.properties["Measured: Thunderbolt"]?.stringValue {
-                            CapsuleTag(text: tb, color: .indigo)
-                        }
-                        if let usb = node.properties["Measured: USB"]?.stringValue {
-                            CapsuleTag(text: usb, color: .blue)
-                        }
-                        if let displays = node.properties["Spec: Displays"]?.stringValue {
-                            CapsuleTag(text: displays, color: .secondary)
-                        }
-                    }
-                    if node.isTunneled { CapsuleTag(text: "⚡ tunnel", color: .indigo) }
-                    if node.twin != nil { CapsuleTag(text: "×2", color: .secondary) }
-                }
-            }
+            tagArea
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
-        .frame(width: TreeLayout.nodeWidth, height: TreeLayout.nodeHeight, alignment: .leading)
+        .frame(width: TreeLayout.nodeWidth, height: height, alignment: .topLeading)
         .background(
             isSelected ? Color.accentColor.opacity(0.14) : Color(nsColor: .controlBackgroundColor),
             in: RoundedRectangle(cornerRadius: 9)
@@ -594,8 +571,10 @@ private struct NodeCard: View {
         .overlay(
             RoundedRectangle(cornerRadius: 9)
                 .stroke(
-                    isReenumerated ? Color.yellow : (isSelected ? Color.accentColor : node.tier.color),
-                    lineWidth: isSelected || isReenumerated ? 2 : 1.4
+                    store.overdriveIDs.contains(node.id) ? Color.red
+                        : (isReenumerated ? Color.yellow : (isSelected ? Color.accentColor : node.tier.color)),
+                    lineWidth: store.overdriveIDs.contains(node.id) ? 2.5
+                        : (isSelected || isReenumerated ? 2 : 1.4)
                 )
         )
         .overlay(alignment: .topTrailing) {
@@ -642,6 +621,216 @@ private struct NodeCard: View {
     private func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+/// Single source of truth for a node's tag chips: the card, the card's
+/// expanded state, the inspector footer, and the height estimator all read
+/// this list, so they can never disagree.
+enum TagList {
+    struct Tag {
+        let text: String
+        let color: Color
+    }
+
+    @MainActor
+    static func tags(node: DeviceNode, store: AppStore, verbose: Bool) -> [Tag] {
+        var tags: [Tag] = []
+        if verbose, let badge = Theme.protocolBadge(for: node) {
+            tags.append(Tag(text: badge.label, color: badge.color))
+        }
+        if !node.speedLabel.isEmpty {
+            tags.append(Tag(text: node.speedLabel, color: node.tier.color))
+        }
+        if store.ghostIDs.contains(node.id) {
+            tags.append(Tag(text: "removed", color: .red))
+            return tags
+        }
+        if store.overdriveIDs.contains(node.id) {
+            tags.append(Tag(text: "⚡ OVERCURRENT", color: .red))
+        }
+        if store.reenumeratedIDs.contains(node.id) {
+            tags.append(Tag(text: "re-enumerated", color: .yellow))
+        }
+        if let diff = store.baselineDiff {
+            if diff.addedIDs.contains(node.id) {
+                tags.append(Tag(text: verbose ? "NEW — not in baseline" : "NEW", color: .green))
+            } else if diff.changed.contains(where: { $0.id == node.id }) {
+                tags.append(Tag(text: verbose ? "CHANGED vs baseline" : "CHANGED", color: .yellow))
+            }
+        }
+        if let nodeIssues = store.issues.byNode[node.id], !nodeIssues.isEmpty {
+            if verbose {
+                for issue in nodeIssues {
+                    tags.append(Tag(
+                        text: "⚠︎ \(issue.title)",
+                        color: issue.severity == .problem ? .red : (issue.severity == .warning ? .orange : .secondary)
+                    ))
+                }
+            } else {
+                tags.append(Tag(
+                    text: "⚠︎ \(nodeIssues.count)",
+                    color: nodeIssues.contains { $0.severity == .problem } ? .red : .orange
+                ))
+            }
+        }
+        if store.isRecording, let rate = store.rates[node.id], rate > 1024 {
+            tags.append(Tag(text: Theme.rate(rate), color: .green))
+        }
+        if store.bandwidthOverlay, let share = store.allocatedShare(of: node) {
+            tags.append(Tag(text: "alloc \(Int(share * 100))%", color: .teal))
+        }
+        if let total = node.properties["Portree Ports Total"]?.intValue, total > 0 {
+            let free = node.properties["Portree Ports Free"]?.intValue ?? 0
+            tags.append(Tag(text: "\(total - free)/\(total) ports", color: free == 0 ? .orange : .secondary))
+        }
+        if let power = node.isHub || node.kind == .usbController
+            ? { let sum = node.flattened().compactMap(\.powerSinkMA).reduce(0, +); return sum > 0 ? sum : nil }()
+            : node.powerSinkMA {
+            tags.append(Tag(
+                text: node.isHub || node.kind == .usbController ? "Σ \(power) mA" : "\(power) mA",
+                color: .mint
+            ))
+        }
+        if let displayMode = store.displayModes[node.id] {
+            tags.append(Tag(text: displayMode, color: .pink))
+        } else if node.videoTunnelCount > 0 {
+            tags.append(Tag(text: "DP \u{00D7}\(node.videoTunnelCount)", color: .pink))
+        }
+        if let camera = store.cameraInfo[node.id] {
+            tags.append(Tag(text: camera.text, color: .pink))
+            if camera.inUse {
+                tags.append(Tag(text: "● IN USE", color: .red))
+            }
+        }
+        if node.isDisplayLink {
+            tags.append(Tag(text: "DisplayLink", color: .pink))
+        }
+        if node.kind == .system {
+            if let tb = node.properties["Measured: Thunderbolt"]?.stringValue {
+                tags.append(Tag(text: tb, color: .indigo))
+            }
+            if let usb = node.properties["Measured: USB"]?.stringValue {
+                tags.append(Tag(text: usb, color: .blue))
+            }
+            if let displays = node.properties["Spec: Displays"]?.stringValue {
+                tags.append(Tag(text: displays, color: .secondary))
+            }
+        }
+        if node.isTunneled {
+            tags.append(Tag(text: "⚡ tunnel", color: .indigo))
+        }
+        if node.twin != nil {
+            tags.append(Tag(text: verbose ? "2 merged personalities" : "\u{00D7}2", color: .secondary))
+        }
+        return tags
+    }
+}
+
+/// Chip-geometry estimates shared by the card's fit calculation and the
+/// layout's per-node height (character-width approximation of CapsuleTag).
+enum TagMetrics {
+    static let rowHeight: CGFloat = 19
+    static let contentWidth = TreeLayout.nodeWidth - 18
+
+    static func chipWidth(_ text: String) -> CGFloat {
+        CGFloat(text.count) * 6.3 + 17
+    }
+
+    /// How many leading tags fit on one compact row, reserving room for +N.
+    static func fittingPrefix(_ tags: [TagList.Tag]) -> Int {
+        let budget = contentWidth - 34
+        var x: CGFloat = 0
+        var count = 0
+        for tag in tags {
+            let width = chipWidth(tag.text)
+            if x + width > budget { break }
+            x += width + 4
+            count += 1
+        }
+        return max(1, count)
+    }
+
+    /// Card height when the tag list is expanded and soft-wrapped.
+    static func expandedHeight(_ tags: [TagList.Tag]) -> CGFloat {
+        var rows = 1
+        var x: CGFloat = 0
+        for tag in tags + [TagList.Tag(text: "less", color: .secondary)] {
+            let width = chipWidth(tag.text)
+            if x > 0, x + width > contentWidth {
+                rows += 1
+                x = 0
+            }
+            x += width + 4
+        }
+        return TreeLayout.nodeHeight + CGFloat(max(0, rows - 1)) * rowHeight
+    }
+
+    /// Per-node heights for the layout, from each card's expansion state.
+    @MainActor
+    static func nodeHeights(store: AppStore) -> [UInt64: CGFloat] {
+        var heights: [UInt64: CGFloat] = [:]
+        for id in store.expandedTags {
+            guard let node = store.allNodes[id] else { continue }
+            heights[id] = expandedHeight(TagList.tags(node: node, store: store, verbose: false))
+        }
+        return heights
+    }
+}
+
+/// Inspector footer: every tag of the selected node, full-size and wrapped.
+struct InspectorTagsView: View {
+    @Environment(AppStore.self) private var store
+    let node: DeviceNode
+
+    var body: some View {
+        let tags = TagList.tags(node: node, store: store, verbose: true)
+        if !tags.isEmpty {
+            FlowLayout(spacing: 5) {
+                ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
+                    CapsuleTag(text: tag.text, color: tag.color)
+                }
+            }
+        }
+    }
+}
+
+/// Minimal wrapping layout for tag chips (SwiftUI has no built-in flow).
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 5
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(proposal: proposal, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (index, origin) in arrange(proposal: proposal, subviews: subviews).origins.enumerated() {
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
+                proposal: .unspecified
+            )
+        }
+    }
+
+    private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (origins: [CGPoint], size: CGSize) {
+        let maxWidth = proposal.width ?? .infinity
+        var origins: [CGPoint] = []
+        var cursor = CGPoint.zero
+        var rowHeight: CGFloat = 0
+        var totalWidth: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if cursor.x > 0, cursor.x + size.width > maxWidth {
+                cursor.x = 0
+                cursor.y += rowHeight + spacing
+                rowHeight = 0
+            }
+            origins.append(cursor)
+            cursor.x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+            totalWidth = max(totalWidth, cursor.x - spacing)
+        }
+        return (origins, CGSize(width: totalWidth, height: cursor.y + rowHeight))
     }
 }
 

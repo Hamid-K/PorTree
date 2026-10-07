@@ -8,8 +8,17 @@ import IOKit
 /// nothing is estimated. Zero polling happens while stopped.
 public final class BandwidthSampler: @unchecked Sendable {
 
-    /// bytes/second per node ID, delivered once per second on an internal queue.
-    public typealias Handler = @Sendable ([UInt64: Double], Date) -> Void
+    public struct PowerSample: Sendable {
+        /// Negotiated sink allocation per device (mA) — renegotiations show up
+        /// as steps; macOS publishes no instantaneous ammeter.
+        public let allocationMA: [UInt64: Int64]
+        /// Kernel overcurrent counters per device — an increment means the
+        /// hardware actually detected overdraw since the last tick.
+        public let overcurrentCount: [UInt64: Int64]
+    }
+
+    /// bytes/second per node ID + power sample, once per second on an internal queue.
+    public typealias Handler = @Sendable ([UInt64: Double], PowerSample, Date) -> Void
 
     private let queue = DispatchQueue(label: "portree.sampler", qos: .utility)
     private var timer: DispatchSourceTimer?
@@ -95,7 +104,20 @@ public final class BandwidthSampler: @unchecked Sendable {
             lastNIC[name] = (nodeID, total)
         }
 
-        onSample(rates, now)
+        // Power pass: allocations + overcurrent counters straight off the
+        // device nodes (cheap: one matching sweep).
+        var allocation: [UInt64: Int64] = [:]
+        var overcurrent: [UInt64: Int64] = [:]
+        let usbDevices = Registry.matchingServices("IOUSBHostDevice")
+        defer { usbDevices.forEach { IOObjectRelease($0) } }
+        for device in usbDevices {
+            let id = Registry.entryID(of: device)
+            let props = Registry.properties(of: device)
+            if let ma = props["UsbPowerSinkAllocation"]?.intValue { allocation[id] = ma }
+            if let count = props["Overcurrent Count"]?.intValue { overcurrent[id] = count }
+        }
+
+        onSample(rates, PowerSample(allocationMA: allocation, overcurrentCount: overcurrent), now)
     }
 
     /// BSD interface name → in+out byte total, via getifaddrs/AF_LINK.

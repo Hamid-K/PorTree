@@ -47,6 +47,8 @@ final class AppStore {
     var zoom: CGFloat = 1.0 { didSet { persist(Double(zoom), "view.zoom") } }
     var pendingScrollTarget: UInt64?
     var toolboxShown = false
+    /// Cards whose tag row is expanded to the full wrapped list (+N pill).
+    var expandedTags: Set<UInt64> = []
     /// Persistent legend overlay in the graph corner (palette button toggles).
     var legendShown = true { didSet { persist(legendShown, "view.legend") } }
     /// Bandwidth overlay (allocated share + live rates) — OFF by default,
@@ -110,6 +112,13 @@ final class AppStore {
     private(set) var rates: [UInt64: Double] = [:]      // bytes/sec, current
     private(set) var series: [UInt64: [Double]] = [:]   // ring, 300 samples
     private(set) var totalSeries: [Double] = []         // aggregate, for the traffic strip
+    /// Power-allocation history per node (mA) — steps on renegotiation.
+    private(set) var powerSeries: [UInt64: [Double]] = [:]
+    private(set) var currentPowerMA: [UInt64: Int64] = [:]
+    /// Nodes whose kernel overcurrent counter incremented during this
+    /// recording — actual detected overdraw, flashed red.
+    private(set) var overdriveIDs: Set<UInt64> = []
+    private var lastOvercurrent: [UInt64: Int64] = [:]
     private(set) var sampleCount = 0
     private var sampler: BandwidthSampler?
 
@@ -287,9 +296,13 @@ final class AppStore {
         series = [:]        // a new session must not inherit old sparklines/peaks
         totalSeries = []
         rates = [:]
+        powerSeries = [:]
+        currentPowerMA = [:]
+        lastOvercurrent = [:]
+        overdriveIDs = []
         if sampler == nil {
-            sampler = BandwidthSampler { rates, date in
-                Task { @MainActor in AppStore.shared.ingest(rates: rates, at: date) }
+            sampler = BandwidthSampler { rates, power, date in
+                Task { @MainActor in AppStore.shared.ingest(rates: rates, power: power, at: date) }
             }
         }
         sampler?.start()
@@ -308,12 +321,36 @@ final class AppStore {
         ))
     }
 
-    private func ingest(rates newRates: [UInt64: Double], at date: Date) {
+    private func ingest(rates newRates: [UInt64: Double], power: BandwidthSampler.PowerSample, at date: Date) {
         guard isRecording else { return }
         sampleCount += 1
         rates = newRates
         totalSeries.append(newRates.values.reduce(0, +))
         if totalSeries.count > 300 { totalSeries.removeFirst(totalSeries.count - 300) }
+
+        // Power: allocation history per node + overcurrent-counter deltas.
+        currentPowerMA = power.allocationMA
+        for (id, ma) in power.allocationMA {
+            var ring = powerSeries[id] ?? []
+            ring.append(Double(ma))
+            if ring.count > 300 { ring.removeFirst(ring.count - 300) }
+            powerSeries[id] = ring
+        }
+        for (id, count) in power.overcurrentCount {
+            if let previous = lastOvercurrent[id], count > previous {
+                overdriveIDs.insert(id)
+                let name = allNodes[id]?.name ?? "device \(id)"
+                appendEvent(EventRow(
+                    kind: .alert,
+                    title: "OVERCURRENT — \(name)",
+                    detail: "kernel overcurrent counter incremented (now \(count)) — the device drew more than the port could deliver",
+                    nodeID: id,
+                    date: date
+                ))
+                expire(after: 6.0) { $0.overdriveIDs.remove(id) }
+            }
+            lastOvercurrent[id] = count
+        }
         // Every node with an active series gets a sample each tick (0 when
         // idle), so sparklines stay time-aligned.
         var updatedIDs = Set(series.keys)
@@ -469,6 +506,12 @@ final class AppStore {
         }
         selection = id
         pendingScrollTarget = id
+    }
+
+    func toggleTagExpansion(_ id: UInt64) {
+        withAnimation(.snappy) {
+            if expandedTags.contains(id) { expandedTags.remove(id) } else { expandedTags.insert(id) }
+        }
     }
 
     func toggleCollapsed(_ id: UInt64) {

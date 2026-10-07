@@ -39,6 +39,15 @@ struct InspectorView: View {
                     case .bandwidth: BandwidthTab(node: node)
                     }
                 }
+
+                // Pinned footer: live I/O + power for the selection, and every
+                // tag the card wears — full-size for recognition.
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    LiveNodePanel(node: node)
+                    InspectorTagsView(node: node)
+                }
+                .padding(10)
             }
             .sheet(item: $hexPayload) { payload in
                 HexView(payload: payload)
@@ -302,6 +311,54 @@ private struct InterfacesTab: View {
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 16)
+    }
+}
+
+// MARK: - Pinned live panel (selection's I/O + power at a glance)
+
+struct LiveNodePanel: View {
+    @Environment(AppStore.self) private var store
+    let node: DeviceNode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if store.overdriveIDs.contains(node.id) {
+                Label("OVERCURRENT detected — kernel counter incremented", systemImage: "bolt.trianglebadge.exclamationmark.fill")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(.red)
+            }
+            if store.isRecording {
+                if let samples = store.series[node.id], samples.contains(where: { $0 > 0 }) {
+                    HStack {
+                        Text("I/O").font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+                        Spacer()
+                        Text("now \(Theme.rate(store.rates[node.id] ?? 0)) · peak \(Theme.rate(samples.max() ?? 0))")
+                            .font(.system(size: 9.5, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    Sparkline(samples: Array(samples.suffix(120)), color: node.tier.color)
+                        .frame(height: 26)
+                } else {
+                    Text("I/O: no byte counters for this device (storage/network only)")
+                        .font(.system(size: 9.5)).foregroundStyle(.tertiary)
+                }
+                if let powerHistory = store.powerSeries[node.id], !powerHistory.isEmpty {
+                    HStack {
+                        Text("POWER (allocation)").font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+                        Spacer()
+                        Text("\(store.currentPowerMA[node.id] ?? Int64(powerHistory.last ?? 0)) mA / 3000")
+                            .font(.system(size: 9.5, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    Sparkline(samples: Array(powerHistory.suffix(120)), color: .mint)
+                        .frame(height: 16)
+                }
+            }
+            if let power = node.powerSinkMA {
+                ProgressView(value: min(1.0, Double(power) / 3000.0))
+                    .tint(power > 2400 ? .orange : .mint)
+            }
+        }
     }
 }
 

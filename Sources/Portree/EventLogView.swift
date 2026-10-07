@@ -65,6 +65,7 @@ private struct EventRowView: View {
         case .reenumerated: return .yellow
         case .rescan, .info: return .gray
         case .export: return .blue
+        case .alert: return .red
         }
     }
 

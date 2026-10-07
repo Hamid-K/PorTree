@@ -159,9 +159,13 @@ private struct TrafficStripView: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            HStack(spacing: 6) {
-                Image(systemName: "record.circle.fill")
-                    .foregroundStyle(.red)
+            HStack(spacing: 7) {
+                Text("REC")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Color.red, in: Capsule())
                     .symbolEffect(.pulse)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(Theme.rate(store.totalSeries.last ?? 0))
@@ -169,9 +173,12 @@ private struct TrafficStripView: View {
                     Text(elapsed)
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
+                    Text("TOTAL · all monitored devices")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.tertiary)
                 }
             }
-            .frame(width: 118, alignment: .leading)
+            .frame(width: 168, alignment: .leading)
 
             TrafficBars(samples: Array(store.totalSeries.suffix(150)))
                 .frame(maxWidth: .infinity, maxHeight: 34)
