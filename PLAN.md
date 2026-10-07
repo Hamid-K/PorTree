@@ -81,7 +81,7 @@ Everything below was **empirically proven** during research — not assumed:
 | **M4** | Thunderbolt native: domain trees, link speeds incl. TB5 labeling, route strings, receptacle cross-links, Type-C/cable panel, tunnel badges | The Dell U2725QE chain renders as on this machine: root → Dell (40G) → Cable Matters adapter |
 | **M5** | Graph hero view: RT layout, Canvas edges (color+width), node cards, shared fold state, pan/zoom/fit done right, legend | Hierarchy chart is primary view; collapse animates; zoomed panning works |
 | **M6** | Doctor + ship: diagnostics engine, replug history/diff, JSON export, `.app` bundle + icns + codesign, README/build docs | `make app` emits a signed Portree.app; diagnostics flag a real throttled device |
-| **M7** | System & bandwidth: PCIe tree (gen/lanes, TB-tunnel cross-links), System/SoC root node, bandwidth overlay (allocated; live sampling best-effort), Toolbox pane | Overlay off by default; Dell DP tunnel shows real allocated Gb/s; toolbox runs `ioreg` in-app |
+| **M7** | System & bandwidth: PCIe tree (gen/lanes, TB-tunnel cross-links), System/SoC root node, bandwidth overlay (allocated; live sampling best-effort), **record mode with sparklines + animated flow edges**, Toolbox pane | Overlay off by default; Dell DP tunnel shows real allocated Gb/s; record mode graphs a real file copy; toolbox runs `ioreg` in-app |
 
 Sequencing rationale: usefulness ships early (outline + inspector by M2, live by M3); Thunderbolt is core, not stretch (M4); the graph lands once the data under it is trustworthy (M5).
 
