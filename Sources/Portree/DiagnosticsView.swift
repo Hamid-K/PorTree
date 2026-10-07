@@ -59,7 +59,7 @@ struct DiagnosticsView: View {
         guard let snapshot = store.snapshot else { return "" }
         return "Checked \(snapshot.deviceCount) devices across \(snapshot.usbRoots.count) USB controllers, "
             + "\(snapshot.tbRoots.count) TB/USB4 domains and \(snapshot.pciRoots.count) PCIe roots.\n"
-            + "Rules: throttling · bottlenecked hubs · rated speed · power budget & near-limit · overcurrent · port errors · hub depth · TT contention · TB down-training"
+            + "Rules: throttling · bottlenecked hubs · rated speed · power budget & near-limit · overcurrent · port errors · hub depth · TT contention · TB down-training · aggregate oversubscription · input-device anomalies (BadUSB composites, multiple keyboards)"
     }
 }
 

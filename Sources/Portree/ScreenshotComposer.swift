@@ -135,7 +135,7 @@ private struct ComposedShot: View {
     @ViewBuilder
     private func sidebarRow(_ node: DeviceNode, depth: Int, recurse: Bool) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: node.category.symbol)
+            Image(systemName: store.effectiveCategory(of: node).symbol)
                 .appFont(10)
                 .foregroundStyle(node.tier.color)
                 .frame(width: 17, height: 17)
@@ -173,7 +173,7 @@ private struct ComposedShot: View {
         if let node = store.selection.flatMap({ store.allNodes[$0] }) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    Image(systemName: node.category.symbol)
+                    Image(systemName: store.effectiveCategory(of: node).symbol)
                         .appFont(15, weight: .medium)
                         .foregroundStyle(node.tier.color)
                         .frame(width: 30, height: 30)

@@ -8,6 +8,37 @@ import Foundation
         Doctor.diagnose(snapshot: Snapshot(usbRoots: roots, tbRoots: []))
     }
 
+    private func iface(_ cls: Int64, _ sub: Int64 = 0, _ proto: Int64 = 0) -> SubEntry {
+        SubEntry(id: "if-\(cls)-\(sub)-\(proto)", title: "interface", detail: "", properties: [
+            "bInterfaceClass": .int(cls),
+            "bInterfaceSubClass": .int(sub),
+            "bInterfaceProtocol": .int(proto),
+        ])
+    }
+
+    @Test func suspiciousInputComposite() {
+        // Boot keyboard + mass storage on one device = BadUSB signature.
+        var ducky = fixture(id: 10, name: "Ducky", vid: 1, pid: 2)
+        ducky.interfaces = [iface(3, 1, 1), iface(8)]
+        var keyboard = fixture(id: 11, name: "Real keyboard", vid: 3, pid: 4)
+        keyboard.interfaces = [iface(3, 1, 1)]
+        let report = diagnose([controller(id: 1, children: [ducky, keyboard])])
+        let input = report.all.filter { $0.kind == .suspiciousInput }
+
+        #expect(input.contains { $0.nodeID == 10 && $0.severity == .problem })
+        // Two keyboard-class devices → info on the unflagged one only
+        // (Issue.id is kind+node, so the ducky must not get a second row).
+        #expect(input.contains { $0.nodeID == 11 && $0.severity == .info })
+        #expect(input.count == 2)
+    }
+
+    @Test func singleOrdinaryKeyboardStaysSilent() {
+        var keyboard = fixture(id: 20, name: "Keyboard", vid: 3, pid: 4)
+        keyboard.interfaces = [iface(3, 1, 1), iface(3, 1, 2)]  // kb + mouse endpoint
+        let report = diagnose([controller(id: 1, children: [keyboard])])
+        #expect(report.all.allSatisfy { $0.kind != .suspiciousInput })
+    }
+
     @Test func throttledDeviceFlagsTheLimitingEdge() {
         // SuperSpeed-revision device (guaranteed 5G-capable) trained at 480M
         // behind a 480M hub: problem on the device, red edge on its link.

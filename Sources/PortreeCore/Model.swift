@@ -102,6 +102,50 @@ extension DeviceNode {
     public var deviceClassCode: Int64? { properties["bDeviceClass"]?.intValue }
     public var isHub: Bool { deviceClassCode == 9 }
 
+    /// HID boot-keyboard interface (class 3, subclass 1, protocol 1) — the
+    /// signature a keystroke-injection device must expose to type.
+    public var hasKeyboardInterface: Bool {
+        interfaces.contains {
+            $0.properties["bInterfaceClass"]?.intValue == 3
+                && $0.properties["bInterfaceSubClass"]?.intValue == 1
+                && $0.properties["bInterfaceProtocol"]?.intValue == 1
+        }
+    }
+
+    public var hasStorageInterface: Bool {
+        interfaces.contains { $0.properties["bInterfaceClass"]?.intValue == 0x08 }
+    }
+
+    public var hasVendorInterface: Bool {
+        interfaces.contains { $0.properties["bInterfaceClass"]?.intValue == 0xFF }
+    }
+
+    /// Canonical copyable ID: USB vid:pid, PCI vendor:device (both hex), or
+    /// the TB switch UID. Nil when the node carries no stable hardware ID.
+    public var idPairLabel: String? {
+        if let vid = vendorID, let pid = productID {
+            return "\(Format.hex(vid, width: 4)):\(Format.hex(pid, width: 4))"
+        }
+        if kind == .tbSwitch, let uid = properties["UID"]?.intValue {
+            return Format.tbUID(uid)
+        }
+        // PCI vendor-id / device-id: 4-byte little-endian Data (or plain
+        // numbers); only the low 16 bits are the ID.
+        func word(_ value: PropertyValue?) -> Int64? {
+            switch value {
+            case .int(let i): return i & 0xFFFF
+            case .data(let d) where d.count >= 2:
+                return Int64(d[d.startIndex]) | Int64(d[d.startIndex + 1]) << 8
+            default: return nil
+            }
+        }
+        if kind == .pciDevice,
+           let vid = word(properties["vendor-id"]), let pid = word(properties["device-id"]) {
+            return "\(Format.hex(vid, width: 4)):\(Format.hex(pid, width: 4))"
+        }
+        return nil
+    }
+
     /// Carrying video: a TB switch with active DP adapters (reserved fabric
     /// bandwidth) or a DisplayLink device (video over plain USB data — the
     /// opposite trade-off, worth telling apart).

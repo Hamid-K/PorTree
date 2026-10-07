@@ -58,6 +58,41 @@ extension DeviceCategory {
         case .system: return "laptopcomputer"
         }
     }
+
+    /// Section title in the sidebar's by-type view.
+    var typeLabel: String {
+        switch self {
+        case .controller: return "Controllers"
+        case .hub: return "Hubs"
+        case .dock: return "Docks"
+        case .hid: return "Input — keyboards"
+        case .mouse: return "Input — pointing"
+        case .storage: return "Storage"
+        case .audio: return "Audio in"
+        case .speaker: return "Audio out"
+        case .video: return "Cameras"
+        case .network: return "Network"
+        case .display: return "Displays"
+        case .printer: return "Printers"
+        case .smartCard: return "Smart cards"
+        case .wireless: return "Wireless"
+        case .tbSwitch: return "Thunderbolt devices"
+        case .tbDomain: return "Thunderbolt domains"
+        case .adapter: return "Adapters"
+        case .vendor: return "Vendor-specific"
+        case .unknown: return "Unidentified"
+        case .pci: return "PCIe"
+        case .system: return "System"
+        }
+    }
+
+    /// Fixed presentation order for the by-type sidebar (interesting device
+    /// families first, infrastructure last).
+    static let typeOrder: [DeviceCategory] = [
+        .display, .hid, .mouse, .storage, .video, .audio, .speaker, .network,
+        .wireless, .printer, .smartCard, .dock, .adapter, .vendor, .unknown,
+        .hub, .tbSwitch, .tbDomain, .controller, .pci,
+    ]
 }
 
 /// Graph canvas background — selectable because "gray line on gray canvas"

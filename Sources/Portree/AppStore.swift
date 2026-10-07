@@ -23,7 +23,41 @@ final class AppStore {
     private(set) var issues = Doctor.Report.empty
     /// Live display mode per display node ("3840×2160 @ 120 Hz · DisplayPort
     /// · TB/USB4 tunnel"), matched via NSScreen names + CoreGraphics modes.
+    /// A key in here means the node IS that screen.
     private(set) var displayModes: [UInt64: String] = [:]
+    /// Displays attributed to a node that merely DRIVES them (a DP-out
+    /// adapter with a registry-invisible monitor on the far side).
+    private(set) var attachedDisplayModes: [UInt64: String] = [:]
+
+    /// Display-first categorization: a monitor with a built-in hub
+    /// enumerates as a dock-category TB switch, but once a live screen is
+    /// name-matched to the node, it IS a display — the hub is secondary
+    /// (the card keeps a "hub" tag for it).
+    func effectiveCategory(of node: DeviceNode) -> DeviceCategory {
+        displayModes[node.id] != nil && node.kind != .system ? .display : node.category
+    }
+
+    /// Every screen the system is driving, for the sidebar Displays section —
+    /// each bound to the graph node that is (or drives) it when known.
+    struct DisplayEntry: Identifiable, Hashable {
+        let id: UInt32          // CGDirectDisplayID
+        let name: String
+        let detail: String
+        let nodeID: UInt64?
+        let isBuiltIn: Bool
+    }
+    private(set) var displayEntries: [DisplayEntry] = []
+
+    /// Transient spotlight: everything except this node fades out so a
+    /// display picked in the sidebar is easy to spot in the graph.
+    private(set) var focusedNodeID: UInt64?
+
+    func focusNode(_ id: UInt64) {
+        selection = id
+        pendingScrollTarget = id
+        withAnimation(.easeOut(duration: 0.25)) { focusedNodeID = id }
+        expire(after: 3.0) { if $0.focusedNodeID == id { $0.focusedNodeID = nil } }
+    }
     /// Camera capability per video node ("up to 1920×1080 @ 60 fps · UVC"),
     /// matched by the VID/PID AVCaptureDevice.modelID carries; `inUse` means
     /// another app is streaming from it right now.
@@ -50,17 +84,44 @@ final class AppStore {
     /// Cards whose tag row is expanded to the full wrapped list (+N pill).
     var expandedTags: Set<UInt64> = []
     /// Persistent legend overlay in the graph corner (palette button toggles).
-    var legendShown = true { didSet { persist(legendShown, "view.legend") } }
+    var legendShown = true { didSet { persist(legendShown, "view.legend2") } }
     /// Bandwidth overlay (allocated share + live rates) — OFF by default,
     /// deliberately not persisted.
     var bandwidthOverlay = false
     /// Mint power-allocation sparkline inside cards while recording — OFF by
     /// default (the mA number chip is always shown regardless).
     var powerOverlay = false
+    /// Connection beeps: Pop/Bottle on plug/unplug, Basso on alerts, Sosumi
+    /// on unknown devices.
+    var soundsEnabled = true { didSet { persist(soundsEnabled, "sounds") } }
+    /// Device guard: flag devices never seen on this Mac before. The first
+    /// run with the guard on learns everything currently attached as the
+    /// trusted baseline.
+    var deviceGuard = true {
+        didSet {
+            persist(deviceGuard, "security.guard")
+            if deviceGuard { updateDeviceGuard(alerting: true) } else { untrustedIDs = [] }
+        }
+    }
+    /// Connected devices the trust store has never seen (red-flagged until
+    /// trusted or detached).
+    private(set) var untrustedIDs: Set<UInt64> = []
+    private let trustStore = TrustStore(fileURL: TrustStore.defaultFileURL())
+
+    var knownDeviceCount: Int { trustStore.devices.count }
 
     /// Live Σ of a hub/controller subtree's counter-bearing devices.
     func aggregateRate(for node: DeviceNode) -> Double {
         node.flattened().compactMap { rates[$0.id] }.reduce(0, +)
+    }
+    /// Sidebar presentation: the topology tree, or a flat device-type filter
+    /// where picking a row spotlights the device in the graph.
+    enum SidebarMode: String, CaseIterable {
+        case topology, types
+        var label: String { self == .topology ? "Tree" : "Types" }
+    }
+    var sidebarMode: SidebarMode = .topology {
+        didSet { persist(sidebarMode.rawValue, "view.sidebarMode") }
     }
     var orientation: LayoutOrientation = .leftToRight {
         didSet { persist(orientation.rawValue, "view.orientation") }
@@ -119,7 +180,9 @@ final class AppStore {
             )
             inspectorShown = defaults.object(forKey: "portree.view.inspector") as? Bool ?? true
             drawerShown = defaults.object(forKey: "portree.view.drawer") as? Bool ?? true
-            legendShown = defaults.object(forKey: "portree.view.legend") as? Bool ?? true
+            // Fresh key: the legend chrome was rebuilt, old persisted "off"
+            // states are deliberately not carried over.
+            legendShown = defaults.object(forKey: "portree.view.legend2") as? Bool ?? true
         }
         if let raw = defaults.string(forKey: "portree.view.orientation"),
            let restored = LayoutOrientation(rawValue: raw) {
@@ -135,6 +198,17 @@ final class AppStore {
            let restored = AppAppearance(rawValue: raw) {
             appearance = restored
         }
+        soundsEnabled = defaults.object(forKey: "portree.sounds") as? Bool ?? true
+        deviceGuard = defaults.object(forKey: "portree.security.guard") as? Bool ?? true
+        if let raw = defaults.string(forKey: "portree.view.sidebarMode"),
+           let restored = SidebarMode(rawValue: raw) {
+            sidebarMode = restored
+        }
+    }
+
+    private func playSound(_ name: String) {
+        guard soundsEnabled else { return }
+        NSSound(named: name)?.play()
     }
 
     // MARK: Record mode (live throughput; real counters only)
@@ -223,10 +297,22 @@ final class AppStore {
             }
         }
 
-        // Arrivals: glow briefly.
+        // Arrivals: glow briefly. A keyboard-class arrival additionally
+        // raises an alert — anything that can type deserves a second look
+        // (re-plugs of a known identity collapsed into re-enumerations above
+        // and never reach this loop).
         for id in arrivals {
             arrivalIDs.insert(id)
             expire(after: 1.6) { $0.arrivalIDs.remove(id) }
+            if let node = newByID[id], node.hasKeyboardInterface {
+                appendEvent(EventRow(
+                    kind: .alert,
+                    title: "New keyboard-class device — \(node.name)",
+                    detail: "this device can inject keystrokes — unplug it if you don't recognize it",
+                    nodeID: id
+                ))
+                playSound("Basso")
+            }
         }
 
         withAnimation(.spring(duration: 0.35)) {
@@ -237,6 +323,7 @@ final class AppStore {
         }
 
         issues = Doctor.diagnose(snapshot: new)
+        updateDeviceGuard(alerting: true)
         recomputeBaselineDiff()
         updateDisplayModes()
         updateCameraInfo()
@@ -251,6 +338,71 @@ final class AppStore {
 
     private func previousParent(of id: UInt64) -> UInt64? {
         parentOf[id]
+    }
+
+    // MARK: Device guard
+
+    /// Wholesale re-evaluation against the trust store: flags EVERY connected
+    /// unknown device, not just fresh arrivals — a device attached while the
+    /// app was closed is caught on the first snapshot after launch.
+    private func updateDeviceGuard(alerting: Bool) {
+        guard deviceGuard, let snapshot else {
+            untrustedIDs = []
+            return
+        }
+        if !trustStore.hasBaseline {
+            // First run: everything attached right now becomes the baseline.
+            let learned = trustStore.learn(from: snapshot)
+            appendEvent(EventRow(
+                kind: .info,
+                title: "Device guard baseline learned",
+                detail: "\(learned) attached devices trusted — anything new will be flagged"
+            ))
+            return
+        }
+        var flagged: Set<UInt64> = []
+        for root in snapshot.usbRoots + snapshot.tbRoots {
+            for node in root.flattened()
+            where (node.kind == .usbDevice || node.kind == .tbSwitch)
+                && node.deviceIdentity != nil
+                && !trustStore.isKnown(node) {
+                flagged.insert(node.id)
+            }
+        }
+        let newFlags = flagged.subtracting(untrustedIDs)
+        untrustedIDs = flagged
+        guard alerting, !newFlags.isEmpty else { return }
+        for id in newFlags {
+            let name = allNodes[id]?.name ?? "device \(id)"
+            appendEvent(EventRow(
+                kind: .alert,
+                title: "UNKNOWN DEVICE — \(name)",
+                detail: "never seen on this Mac before — right-click the node to trust it",
+                nodeID: id
+            ))
+        }
+        playSound("Sosumi")
+    }
+
+    func isUntrusted(_ id: UInt64) -> Bool { untrustedIDs.contains(id) }
+
+    func trustDevice(_ node: DeviceNode) {
+        let added = trustStore.trust(node)
+        guard added || untrustedIDs.contains(node.id) else { return }
+        trustStore.save()
+        withAnimation(.easeOut(duration: 0.3)) { _ = untrustedIDs.remove(node.id) }
+        appendEvent(EventRow(kind: .info, title: "Trusted — \(node.name)", detail: "added to known devices", nodeID: node.id))
+    }
+
+    func trustAllConnected() {
+        guard let snapshot else { return }
+        let added = trustStore.learn(from: snapshot)
+        withAnimation(.easeOut(duration: 0.3)) { untrustedIDs = [] }
+        appendEvent(EventRow(
+            kind: .info,
+            title: "Trusted all connected devices",
+            detail: added == 0 ? "no new devices to add" : "\(added) new device\(added == 1 ? "" : "s") added to known devices"
+        ))
     }
 
     private func markReenumerated(id: UInt64, name: String, confident: Bool) {
@@ -378,6 +530,7 @@ final class AppStore {
                     nodeID: id,
                     date: date
                 ))
+                playSound("Basso")
                 expire(after: 6.0) { $0.overdriveIDs.remove(id) }
             }
             lastOvercurrent[id] = count
@@ -477,6 +630,8 @@ final class AppStore {
 
     private func handleRaw(_ raw: [RawEvent]) {
         guard !logPaused else { return }
+        var sawConnect = false
+        var sawDisconnect = false
         for event in raw {
             let kind: EventRow.Kind = event.kind == .added ? .connected : .disconnected
             let deviceName = event.name.isEmpty ? event.className : event.name
@@ -503,6 +658,7 @@ final class AppStore {
                 continue
             }
             lastRawDevice = (deviceName, event.date)
+            if kind == .connected { sawConnect = true } else { sawDisconnect = true }
             appendEvent(EventRow(
                 kind: kind,
                 title: "\(kind == .connected ? "Connected" : "Disconnected") — \(deviceName)",
@@ -511,6 +667,10 @@ final class AppStore {
                 date: event.date
             ))
         }
+        // One beep per batch per direction — a dock enumerating ten devices
+        // is one plug, not ten.
+        if sawConnect { playSound("Pop") }
+        if sawDisconnect { playSound("Bottle") }
     }
 
     func appendEvent(_ row: EventRow) {
@@ -621,6 +781,18 @@ final class AppStore {
     private func updateDisplayModes() {
         var result: [UInt64: String] = [:]
         var matchedScreens: Set<CGDirectDisplayID> = []
+        var nodeForScreen: [CGDirectDisplayID: UInt64] = [:]
+
+        // Registry DP sinks join to CG screens by EDID identity (vendor/
+        // product/serial), never by name — the sink carries the negotiated
+        // DP link rate the CG side doesn't know.
+        let sinks = DisplaySinks.enumerate().filter(\.active)
+        func sink(for displayID: CGDirectDisplayID) -> DisplaySink? {
+            sinks.first {
+                $0.edidProductID == Int64(CGDisplayModelNumber(displayID))
+                    && ($0.edidSerial == nil || $0.edidSerial == Int64(CGDisplaySerialNumber(displayID)))
+            }
+        }
 
         func mode(of screen: NSScreen) -> (id: CGDirectDisplayID, text: String)? {
             guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
@@ -632,35 +804,72 @@ final class AppStore {
             return (displayID, text)
         }
 
-        // External displays we actually have nodes for: TB/USB4 monitors
-        // (DP-IN switches) and DisplayLink devices. Name-matched to NSScreen.
-        for node in allNodes.values where node.category == .display || node.isDisplayLink {
+        // External displays we actually have nodes for, name-matched to
+        // NSScreen. ANY node category qualifies — a monitor with a built-in
+        // hub (Dell U-series) enumerates as a dock-category TB switch, not
+        // as a pure display.
+        for node in allNodes.values.sorted(by: { $0.id < $1.id }) where node.kind != .system {
             let nodeName = node.name.lowercased()
             guard nodeName.count >= 4,
                   let screen = NSScreen.screens.first(where: {
                       let screenName = $0.localizedName.lowercased()
                       return screenName.contains(nodeName) || nodeName.contains(screenName)
                   }),
-                  let current = mode(of: screen) else { continue }
+                  let current = mode(of: screen),
+                  !matchedScreens.contains(current.id) else { continue }
             matchedScreens.insert(current.id)
             let connection = node.isDisplayLink
                 ? "USB · DisplayLink"
                 : (node.kind == .tbSwitch ? "DisplayPort · TB/USB4 tunnel" : "DisplayPort")
-            result[node.id] = "\(current.text) · \(connection)"
+            let rate = sink(for: current.id)?.linkRate.map { " · \($0)" } ?? ""
+            result[node.id] = "\(current.text) · \(connection)\(rate)"
+            nodeForScreen[current.id] = node.id
         }
 
         // The built-in panel has no USB/TB/PCI node — it belongs to the SoC.
         if let system = systemDisplayNode {
-            let builtIn = NSScreen.screens.compactMap { screen -> String? in
+            for screen in NSScreen.screens {
                 guard let current = mode(of: screen),
                       !matchedScreens.contains(current.id),
-                      CGDisplayIsBuiltin(current.id) != 0 else { return nil }
-                return "\(current.text) · internal"
+                      CGDisplayIsBuiltin(current.id) != 0 else { continue }
+                result[system.id] = "\(current.text) · internal"
+                nodeForScreen[current.id] = system.id
+                break
             }
-            if let first = builtIn.first { result[system.id] = first }
+        }
+
+        // Orphan external screens: driven by the GPU but invisible to the
+        // USB/TB registry — a monitor on the far side of a DP-out adapter is
+        // a pure video sink. Attribution is shown only when it is provable by
+        // elimination: exactly one orphan screen and one DP egress adapter.
+        let orphans = NSScreen.screens.filter { screen in
+            guard let current = mode(of: screen) else { return false }
+            return !matchedScreens.contains(current.id) && CGDisplayIsBuiltin(current.id) == 0
+        }
+        let dpEgress = allNodes.values.filter { $0.category == .adapter }
+        var attached: [UInt64: String] = [:]
+        if orphans.count == 1, dpEgress.count == 1,
+           let screen = orphans.first, let current = mode(of: screen),
+           let adapter = dpEgress.first {
+            let rate = sink(for: current.id)?.linkRate.map { " · \($0)" } ?? ""
+            attached[adapter.id] = "\(screen.localizedName) · \(current.text) · via DP out\(rate)"
+            nodeForScreen[current.id] = adapter.id
         }
 
         displayModes = result
+        attachedDisplayModes = attached
+        displayEntries = NSScreen.screens.compactMap { screen in
+            guard let current = mode(of: screen) else { return nil }
+            let builtIn = CGDisplayIsBuiltin(current.id) != 0
+            let rate = sink(for: current.id)?.linkRate.map { " · \($0)" } ?? ""
+            return DisplayEntry(
+                id: current.id,
+                name: screen.localizedName,
+                detail: "\(current.text)\(builtIn ? " · internal" : rate)",
+                nodeID: nodeForScreen[current.id],
+                isBuiltIn: builtIn
+            )
+        }
     }
 
     // MARK: Web identification

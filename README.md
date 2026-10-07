@@ -24,10 +24,13 @@ Selected-device detail — live I/O while recording, camera capability, power al
 | Baseline diff | Freeze the current state — or load a saved snapshot JSON — then compare against live after any change: added / removed / changed devices, keyed by device identity so old baselines still match. The "why is there a new HID device" button |
 | Record mode | 1 Hz sampling of real byte counters (storage, network interfaces) — per-node sparklines, animated flow along busy links, aggregate traffic strip with top talkers. Devices without counters show nothing rather than estimates |
 | Live power | Rides the record tick: per-device allocation history (renegotiation steps chart), always-on mA chips with subtree Σ on hubs, allocation gauge vs the port's real current limit — and a kernel **overcurrent-counter watch** that flashes the node red and logs an alert the second actual overdraw is detected |
-| Displays & cameras | Monitors get resolution/refresh/connection (DP tunnel vs DisplayLink vs internal); UVC cameras get max format/fps and a live **IN USE** flag when another app is streaming |
+| Displays & cameras | Monitors get resolution/refresh/connection and the negotiated DP link rate (registry DP sinks joined to live screens by EDID identity, never by name). Monitors with built-in hubs are labeled display-first with a "built-in hub" chip; a plain-DP monitor behind a TB→DP adapter is attributed to the adapter when provable by elimination. A dedicated sidebar **Displays** section lists every screen — click one to spotlight its node in the graph. UVC cameras get max format/fps and a live **IN USE** flag when another app is streaming |
 | Host summary | Measured from the registry: TB generation and per-port bandwidth, port count, USB controller count/revision, active DP tunnels; reference-table chip specs (max displays) where known, with an explicit note when a chip has no entry |
 | Tags | Every fact a node carries as readable chips: compact row with +N overflow on cards (expandable per card or all at once), the full set mirrored large in the inspector |
-| Identify | One click searches the web for the selected device's `vid:pid` + name — the fastest "what is this thing" for unknowns |
+| Identify | One click searches the web for the selected device's `vid:pid` + name — the fastest "what is this thing" for unknowns; right-click copies the device name or canonical ID (USB vid:pid, PCI vendor:device, TB UID) |
+| Device guard | On by default: the first run learns every attached device as the trusted baseline; afterwards any **never-seen device** is flagged red in graph + sidebar with a distinct alert sound and log entry until you right-click → *Trust this device* (or *Trust All Connected Devices*). Serial-less devices keep trust across port moves, but a serial-less clone of a serial-bearing known device does **not** pass |
+| Connection sounds | Optional beeps: plug/unplug, alerts (overcurrent, new keyboard-class device, unknown device) — one beep per event batch, toggleable |
+| Sidebar modes | Topology tree, or a **by-type filter** (input, storage, cameras, network, …) where clicking a device spotlights it in the graph with the same fade-out focus as search |
 | Search | Live filter keeping ancestors, graph glow, match counter, ⌘G cycles through hits |
 | Appearance | Dark/Light/System app appearance, selectable canvas background, adjustable UI font scale (⌥⌘±), view state persisted |
 | Export | Snapshot JSON (⇧⌘E), graph PNG/JPEG, reproducible full-app screenshot — all also available headless (below) |
@@ -55,6 +58,7 @@ Feature rows extend the comparison table on the Hubble product page. [Hubble](ht
 | Power allocation history + overcurrent alerts | ✓ | partial | – | – | – | – |
 | Display & camera modes (res/fps, in-use) | ✓ | – | – | partial | – | – |
 | Baseline snapshot diff | ✓ | – | – | – | – | – |
+| Unknown-device guard (trusted baseline, BadUSB heuristics) | ✓ | – | – | – | – | – |
 | Persisted event log | ✓ | – | – | – | – | – |
 | Web device identification | ✓ | ✓ | – | – | – | – |
 | Headless CLI (JSON / images) | ✓ | – | – | – | partial | ✓ |
@@ -79,6 +83,9 @@ The Doctor re-runs automatically on every topology change and grades findings as
 - **Hub chain depth** — warning one tier before the controller's tier limit ("one more hub level will fail to enumerate"), problem at the limit
 - **Single-TT contention** — multiple low/full-speed devices sharing one transaction translator
 - **No free ports** — a fully occupied hub
+- **Input-device anomalies** — a keyboard interface paired with mass storage on one device (the classic BadUSB/keystroke-injection carrier, problem), a keyboard interface on a device that doesn't present as a keyboard (warning), and a note on every keyboard-class device when more than one can type into the Mac. A keyboard-class hot-plug always raises an alert event
+
+Separate from the Doctor, the **device guard** keeps a persistent known-devices list (`Application Support/Portree/known-devices.json`) and flags anything never seen on this Mac before — see Features.
 
 Rules only fire on provable inputs; a rule that can't prove its data stays silent.
 

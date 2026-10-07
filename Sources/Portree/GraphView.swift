@@ -15,21 +15,6 @@ struct GraphView: View {
     @ViewBuilder
     private func graphContent(layout: TreeLayout, search: (matches: Set<UInt64>, visible: Set<UInt64>)?) -> some View {
         ZStack(alignment: .topLeading) {
-            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !store.isRecording)) { timeline in
-                EdgeCanvas(
-                    edges: layout.edges,
-                    horizontal: layout.orientation == .leftToRight,
-                    dimmed: search.map { s in
-                        Set(layout.edges.filter { !s.visible.contains($0.childID) }.map(\.id))
-                    } ?? [],
-                    flagged: store.issues.flaggedEdges,
-                    flow: store.isRecording ? store.rates : [:],
-                    time: timeline.date.timeIntervalSinceReferenceDate,
-                    zoom: store.zoom,
-                    background: store.canvasBackground
-                )
-            }
-
             ForEach(layout.visibleNodes) { node in
                 let position = layout.positions[node.id] ?? .zero
                 let cardHeight = layout.height(of: node.id)
@@ -41,8 +26,10 @@ struct GraphView: View {
                     isGhost: store.ghostIDs.contains(node.id),
                     isArrival: store.arrivalIDs.contains(node.id),
                     isReenumerated: store.reenumeratedIDs.contains(node.id),
-                    isDimmed: search.map { !$0.visible.contains(node.id) } ?? false,
-                    isMatch: search.map { $0.matches.contains(node.id) } ?? false
+                    isDimmed: (search.map { !$0.visible.contains(node.id) } ?? false)
+                        || (store.focusedNodeID.map { $0 != node.id } ?? false),
+                    isMatch: (search.map { $0.matches.contains(node.id) } ?? false)
+                        || store.focusedNodeID == node.id
                 )
                 .frame(width: TreeLayout.nodeWidth, height: cardHeight)
                 .position(
@@ -68,6 +55,32 @@ struct GraphView: View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
                 store.canvasBackground.color
+
+                // Edges render OUTSIDE the scaled layer, at full viewport
+                // resolution, with pan/zoom applied to the canvas CTM — a
+                // Canvas inside scaleEffect is rasterized at logical size and
+                // goes blurry when zoomed in.
+                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !store.isRecording)) { timeline in
+                    EdgeCanvas(
+                        edges: layout.edges,
+                        horizontal: layout.orientation == .leftToRight,
+                        dimmed: {
+                            var dim = search.map { s in
+                                Set(layout.edges.filter { !s.visible.contains($0.childID) }.map(\.id))
+                            } ?? []
+                            if let focus = store.focusedNodeID {
+                                dim.formUnion(layout.edges.filter { $0.childID != focus }.map(\.id))
+                            }
+                            return dim
+                        }(),
+                        flagged: store.issues.flaggedEdges,
+                        flow: store.isRecording ? store.rates : [:],
+                        time: timeline.date.timeIntervalSinceReferenceDate,
+                        zoom: store.zoom * gestureZoom,
+                        background: store.canvasBackground,
+                        canvasOffset: store.panOffset
+                    )
+                }
 
                 graphContent(layout: layout, search: search)
                     .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
@@ -117,35 +130,48 @@ struct GraphView: View {
                 withAnimation(.easeInOut(duration: 0.3)) {
                     store.centerGraph(on: CGPoint(
                         x: position.x + TreeLayout.nodeWidth / 2,
-                        y: position.y + TreeLayout.nodeHeight / 2
+                        y: position.y + layout.height(of: target) / 2
                     ))
                 }
                 store.pendingScrollTarget = nil
             }
-            .overlay(alignment: .bottomTrailing) {
-                HStack(spacing: 6) {
-                    Menu {
-                        Button("Export as PNG") { GraphImageExporter.export(store: store, as: .png) }
-                        Button("Export as JPEG") { GraphImageExporter.export(store: store, as: .jpeg) }
-                    } label: {
-                        Image(systemName: "camera")
+            // Fixed chrome layer: legend bottom-left, zoom/fit/export
+            // bottom-right. Lives inside the stage with an explicit z-order so
+            // no overlay-resolution quirk can swallow it again.
+            .overlay {
+                VStack {
+                    Spacer()
+                    HStack(alignment: .bottom) {
+                        if store.legendShown {
+                            LegendView()
+                        }
+                        Spacer()
+                        HStack(spacing: 6) {
+                            Menu {
+                                Button("Export as PNG") { GraphImageExporter.export(store: store, as: .png) }
+                                Button("Export as JPEG") { GraphImageExporter.export(store: store, as: .jpeg) }
+                            } label: {
+                                Image(systemName: "camera")
+                            }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
+                            .help("Export the graph as an image")
+                            Button { store.zoomAround(factor: 1 / 1.2) } label: { Image(systemName: "minus.magnifyingglass") }
+                                .help("Zoom out (⌘−)")
+                            Button { store.fitGraph(contentSize: layout.size) } label: { Text("Fit") }
+                                .help("Fit the whole tree")
+                            Button { store.zoomAround(factor: 1.2) } label: { Image(systemName: "plus.magnifyingglass") }
+                                .help("Zoom in (⌘+)")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .padding(8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .help("Export the graph as an image")
-                    Button { store.zoomAround(factor: 1 / 1.2) } label: { Image(systemName: "minus.magnifyingglass") }
-                    Button { store.fitGraph(contentSize: layout.size) } label: { Text("Fit") }
-                    Button { store.zoomAround(factor: 1.2) } label: { Image(systemName: "plus.magnifyingglass") }
+                    .padding(10)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .padding(10)
-            }
-            .overlay(alignment: .bottomLeading) {
-                if store.legendShown {
-                    LegendView()
-                        .padding(10)
-                }
+                .zIndex(10)
+                .allowsHitTesting(true)
             }
         }
     }
@@ -339,6 +365,10 @@ private struct EdgeCanvas: View {
     var time: TimeInterval = 0
     var zoom: CGFloat = 1.0
     var background: CanvasBackground = .system
+    /// Pan offset applied to the drawing CTM (interactive view only — the
+    /// canvas fills the viewport and pans/zooms its coordinate space, so
+    /// strokes and labels stay vector-sharp at any zoom).
+    var canvasOffset: CGSize = .zero
 
     /// Orthogonal elbow with small rounded corners — reads much cleaner than
     /// bezier S-curves on dense trees.
@@ -374,6 +404,8 @@ private struct EdgeCanvas: View {
 
     var body: some View {
         Canvas { context, _ in
+            context.translateBy(x: canvasOffset.width, y: canvasOffset.height)
+            context.scaleBy(x: zoom, y: zoom)
             let showLabels = zoom >= 0.55 && edges.count <= 150
             for edge in edges {
                 let path = elbow(from: edge.from, to: edge.to)
@@ -530,7 +562,7 @@ private struct NodeCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 7) {
-                Image(systemName: node.category.symbol)
+                Image(systemName: store.effectiveCategory(of: node).symbol)
                     .appFont(12, weight: .medium)
                     .foregroundStyle(node.tier.color)
                     .frame(width: 22, height: 22)
@@ -573,9 +605,9 @@ private struct NodeCard: View {
         .overlay(
             RoundedRectangle(cornerRadius: 9)
                 .stroke(
-                    store.overdriveIDs.contains(node.id) ? Color.red
+                    store.overdriveIDs.contains(node.id) || store.untrustedIDs.contains(node.id) ? Color.red
                         : (isReenumerated ? Color.yellow : (isSelected ? Color.accentColor : node.tier.color)),
-                    lineWidth: store.overdriveIDs.contains(node.id) ? 2.5
+                    lineWidth: store.overdriveIDs.contains(node.id) || store.untrustedIDs.contains(node.id) ? 2.5
                         : (isSelected || isReenumerated ? 2 : 1.4)
                 )
         )
@@ -605,15 +637,35 @@ private struct NodeCard: View {
             .padding(.bottom, 2)
             .allowsHitTesting(false)
         }
-        .shadow(
-            color: isArrival ? Color.yellow.opacity(0.8) : (isMatch ? Color.yellow.opacity(0.5) : .clear),
-            radius: isArrival ? 10 : (isMatch ? 7 : 0)
-        )
+        .modifier(CardGlow(
+            // Shadow forces offscreen rasterization of the card, which blurs
+            // under zoom — only attach it while a glow is actually showing.
+            color: store.untrustedIDs.contains(node.id) ? Color.red.opacity(0.75)
+                : isArrival ? Color.yellow.opacity(0.8)
+                : isMatch ? Color.yellow.opacity(0.5) : nil,
+            radius: store.untrustedIDs.contains(node.id) ? 9 : (isArrival ? 10 : 7)
+        ))
         .opacity(isGhost ? 0.45 : (isDimmed ? 0.25 : 1.0))
         .contentShape(RoundedRectangle(cornerRadius: 9))
         .onTapGesture { store.selection = node.id }
         .contextMenu {
-            Button("Copy name") { copy(node.name) }
+            if store.untrustedIDs.contains(node.id) {
+                Button("Trust this device") { store.trustDevice(node) }
+                Divider()
+            }
+            if !node.children.isEmpty {
+                Button(store.collapsed.contains(node.id) ? "Expand subtree" : "Collapse subtree") {
+                    store.toggleCollapsed(node.id)
+                }
+            }
+            Button(store.expandedTags.contains(node.id) ? "Collapse tags" : "Expand tags") {
+                store.toggleTagExpansion(node.id)
+            }
+            Divider()
+            Button("Copy device name") { copy(node.name) }
+            if let idPair = node.idPairLabel {
+                Button("Copy device ID") { copy(idPair) }
+            }
             if let location = node.locationID {
                 Button("Copy location path") { copy(Format.locationPath(location)) }
             }
@@ -634,6 +686,21 @@ private struct NodeCard: View {
     private func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+/// Shadow forces the card subtree into an offscreen raster, which scaleEffect
+/// then upscales blurrily — so the modifier only exists while glowing.
+private struct CardGlow: ViewModifier {
+    let color: Color?
+    let radius: CGFloat
+
+    func body(content: Content) -> some View {
+        if let color {
+            content.shadow(color: color, radius: radius)
+        } else {
+            content
+        }
     }
 }
 
@@ -661,6 +728,9 @@ enum TagList {
         }
         if store.overdriveIDs.contains(node.id) {
             tags.append(Tag(text: "⚡ OVERCURRENT", color: .red))
+        }
+        if store.untrustedIDs.contains(node.id) {
+            tags.append(Tag(text: verbose ? "UNKNOWN — never seen on this Mac" : "⚠︎ UNKNOWN", color: .red))
         }
         if store.reenumeratedIDs.contains(node.id) {
             tags.append(Tag(text: "re-enumerated", color: .yellow))
@@ -714,12 +784,20 @@ enum TagList {
             ))
         }
         if let displayMode = store.displayModes[node.id] {
-            tags.append(Tag(text: displayMode, color: .pink))
+            appendSplit(displayMode, color: .pink, to: &tags)
+            // Display-first dual label: a matched monitor that also exposes
+            // downstream devices is a display WITH a built-in hub.
+            if node.kind != .system, node.category != .display, !node.children.isEmpty {
+                tags.append(Tag(text: "built-in hub", color: .secondary))
+            }
         } else if node.videoTunnelCount > 0 {
             tags.append(Tag(text: "DP \u{00D7}\(node.videoTunnelCount)", color: .pink))
         }
+        if let attached = store.attachedDisplayModes[node.id] {
+            appendSplit(attached, color: .pink, to: &tags)
+        }
         if let camera = store.cameraInfo[node.id] {
-            tags.append(Tag(text: camera.text, color: .pink))
+            appendSplit(camera.text, color: .pink, to: &tags)
             if camera.inUse {
                 tags.append(Tag(text: "● IN USE", color: .red))
             }
@@ -729,13 +807,13 @@ enum TagList {
         }
         if node.kind == .system {
             if let tb = node.properties["Measured: Thunderbolt"]?.stringValue {
-                tags.append(Tag(text: tb, color: .indigo))
+                appendSplit(tb, color: .indigo, to: &tags)
             }
             if let usb = node.properties["Measured: USB"]?.stringValue {
-                tags.append(Tag(text: usb, color: .blue))
+                appendSplit(usb, color: .blue, to: &tags)
             }
             if let displays = node.properties["Spec: Displays"]?.stringValue {
-                tags.append(Tag(text: displays, color: .secondary))
+                appendSplit(displays, color: .secondary, to: &tags)
             }
         }
         if node.isTunneled {
@@ -745,6 +823,14 @@ enum TagList {
             tags.append(Tag(text: verbose ? "2 merged personalities" : "\u{00D7}2", color: .secondary))
         }
         return tags
+    }
+
+    /// Compound "a · b · c" strings become one chip per part — a single
+    /// mega-chip can never wrap and always overflows the card frame.
+    private static func appendSplit(_ text: String, color: Color, to tags: inout [Tag]) {
+        for part in text.components(separatedBy: " · ") where !part.isEmpty {
+            tags.append(Tag(text: part, color: color))
+        }
     }
 }
 

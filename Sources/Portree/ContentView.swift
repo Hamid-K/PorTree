@@ -130,10 +130,14 @@ struct ContentView: View {
                     Button("Collapse All Tags") { store.collapseAllTags() }
                     Divider()
                     Toggle("Power sparkline in cards (recording)", isOn: $store.powerOverlay)
+                    Divider()
+                    Toggle("Connection sounds", isOn: $store.soundsEnabled)
+                    Toggle("Device guard (flag unknown devices)", isOn: $store.deviceGuard)
+                    Button("Trust All Connected Devices") { store.trustAllConnected() }
                 } label: {
                     Image(systemName: "circle.lefthalf.filled")
                 }
-                .help("Canvas background · overlays")
+                .help("Canvas background · overlays · sounds · device guard")
 
                 Toggle(isOn: $store.drawerShown) {
                     Image(systemName: "list.bullet.rectangle")

@@ -66,7 +66,7 @@ struct InspectorView: View {
 
     private func header(_ node: DeviceNode) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: node.category.symbol)
+            Image(systemName: store.effectiveCategory(of: node).symbol)
                 .appFont(15, weight: .medium)
                 .foregroundStyle(node.tier.color)
                 .frame(width: 30, height: 30)
@@ -79,14 +79,7 @@ struct InspectorView: View {
                     .lineLimit(1)
             }
             Spacer()
-            Button {
-                store.searchWeb(for: node)
-            } label: {
-                Image(systemName: "globe.badge.chevron.backward")
-                    .appFont(13)
-            }
-            .buttonStyle(.borderless)
-            .help("Search the web for this device (vid:pid + name) — identify unknowns")
+            WebLookupButton(node: node)
         }
         .padding(12)
     }
@@ -322,6 +315,36 @@ private struct InterfacesTab: View {
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 16)
+    }
+}
+
+/// Accent-colored and hover-responsive so it reads as clickable.
+private struct WebLookupButton: View {
+    @Environment(AppStore.self) private var store
+    let node: DeviceNode
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            store.searchWeb(for: node)
+        } label: {
+            Image(systemName: "globe.badge.chevron.backward")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .padding(5)
+                .background(
+                    Color.accentColor.opacity(hovering ? 0.18 : 0.0),
+                    in: Circle()
+                )
+                .scaleEffect(hovering ? 1.12 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .onHover { inside in
+            hovering = inside
+            if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .help("Search the web for this device (vid:pid + name) — identify unknowns")
     }
 }
 

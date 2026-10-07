@@ -9,7 +9,7 @@ public enum Doctor {
         public enum Kind: String, Sendable {
             case throttled, speedCap, bottleneckHub, powerBudget, powerNearLimit
             case overcurrent, portErrors, deepChain, ttContention, tbDowntrain
-            case noFreePorts, bandwidthOversubscribed
+            case noFreePorts, bandwidthOversubscribed, suspiciousInput
         }
         public enum Severity: String, Sendable, Comparable {
             case info, warning, problem
@@ -204,6 +204,49 @@ public enum Doctor {
                         ))
                     }
                 }
+            }
+        }
+
+        // Input-device anomalies — the keystroke-injection (rubber-ducky)
+        // heuristics. All generic: interface class triples only.
+        let keyboards = snapshot.usbRoots
+            .flatMap { $0.flattened() }
+            .filter { $0.kind == .usbDevice && $0.hasKeyboardInterface }
+        // Issue.id is kind+node, so each keyboard gets at most one
+        // suspiciousInput issue; composite findings outrank the count note.
+        var inputFlagged: Set<UInt64> = []
+        for keyboard in keyboards {
+            // A "keyboard" that also presents mass storage or a vendor
+            // channel is the textbook BadUSB composite.
+            if keyboard.hasStorageInterface {
+                issues.append(Issue(
+                    kind: .suspiciousInput,
+                    severity: .problem,
+                    nodeID: keyboard.id,
+                    title: "Keyboard + storage composite",
+                    detail: "\(keyboard.name) exposes a boot-keyboard interface AND mass storage — the classic keystroke-injection payload carrier. Verify you know exactly what this device is."
+                ))
+                inputFlagged.insert(keyboard.id)
+            } else if keyboard.hasVendorInterface && keyboard.category != .hid {
+                issues.append(Issue(
+                    kind: .suspiciousInput,
+                    severity: .warning,
+                    nodeID: keyboard.id,
+                    title: "Keyboard interface on a non-keyboard device",
+                    detail: "\(keyboard.name) can type into this Mac but does not present as a keyboard. Legitimate for some docks/receivers — verify it."
+                ))
+                inputFlagged.insert(keyboard.id)
+            }
+        }
+        if keyboards.count > 1 {
+            for keyboard in keyboards where !inputFlagged.contains(keyboard.id) {
+                issues.append(Issue(
+                    kind: .suspiciousInput,
+                    severity: .info,
+                    nodeID: keyboard.id,
+                    title: "Multiple keyboard-class devices (\(keyboards.count))",
+                    detail: "More than one device can inject keystrokes right now: \(keyboards.map(\.name).joined(separator: ", ")). Make sure each one is yours."
+                ))
             }
         }
 
