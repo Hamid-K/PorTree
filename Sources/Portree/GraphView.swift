@@ -20,9 +20,13 @@ struct GraphView: View {
         ScrollViewReader { proxy in
             ScrollView([.horizontal, .vertical]) {
                 ZStack(alignment: .topLeading) {
-                    EdgeCanvas(edges: layout.edges, dimmed: search.map { s in
-                        Set(layout.edges.filter { !s.visible.contains($0.childID) }.map(\.id))
-                    } ?? [])
+                    EdgeCanvas(
+                        edges: layout.edges,
+                        dimmed: search.map { s in
+                            Set(layout.edges.filter { !s.visible.contains($0.childID) }.map(\.id))
+                        } ?? [],
+                        flagged: store.issues.flaggedEdges
+                    )
 
                     ForEach(layout.visibleNodes) { node in
                         let position = layout.positions[node.id] ?? .zero
@@ -73,6 +77,7 @@ struct GraphView: View {
 private struct EdgeCanvas: View {
     let edges: [TreeLayout.Edge]
     let dimmed: Set<String>
+    let flagged: Set<UInt64>
 
     var body: some View {
         Canvas { context, _ in
@@ -86,9 +91,11 @@ private struct EdgeCanvas: View {
                     control2: CGPoint(x: midX, y: edge.to.y)
                 )
                 let opacity = dimmed.contains(edge.id) ? 0.15 : 0.85
+                // Doctor: the limiting link of a throttled device tints red.
+                let color = flagged.contains(edge.childID) ? Color.red : edge.tier.color
                 var style = StrokeStyle(lineWidth: Theme.edgeWidth(bps: edge.bps), lineCap: .round)
                 if edge.dashed { style.dash = [6, 5] }
-                context.stroke(path, with: .color(edge.tier.color.opacity(opacity)), style: style)
+                context.stroke(path, with: .color(color.opacity(opacity)), style: style)
 
                 // Merged hub twin: a thin parallel stub for the USB2 personality.
                 if let secondary = edge.secondary {
@@ -162,6 +169,12 @@ private struct NodeCard: View {
                 if isGhost {
                     CapsuleTag(text: "removed", color: .red)
                 } else {
+                    if let nodeIssues = store.issues.byNode[node.id], !nodeIssues.isEmpty {
+                        CapsuleTag(
+                            text: "⚠︎ \(nodeIssues.count)",
+                            color: nodeIssues.contains { $0.severity == .problem } ? .red : .orange
+                        )
+                    }
                     if node.isTunneled { CapsuleTag(text: "⚡ tunnel", color: .indigo) }
                     if node.twin != nil { CapsuleTag(text: "2 personalities", color: .secondary) }
                     if node.serialNumber != nil { CapsuleTag(text: "serial", color: .secondary) }

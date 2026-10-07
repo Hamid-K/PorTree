@@ -73,10 +73,32 @@ struct InspectorView: View {
 // MARK: - Decoded
 
 private struct DecodedTab: View {
+    @Environment(AppStore.self) private var store
     let node: DeviceNode
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if let nodeIssues = store.issues.byNode[node.id], !nodeIssues.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(nodeIssues) { issue in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label(issue.title, systemImage: issue.severity == .problem
+                                  ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill")
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundStyle(issue.severity == .problem ? Color.red : Color.orange)
+                            Text(issue.detail)
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            (issue.severity == .problem ? Color.red : Color.orange).opacity(0.08),
+                            in: RoundedRectangle(cornerRadius: 7)
+                        )
+                    }
+                }
+            }
             group("Identity") {
                 row("Class", node.className)
                 if let vid = node.vendorID, let pid = node.productID {

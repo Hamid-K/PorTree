@@ -11,7 +11,18 @@ SWIFT := /usr/bin/swift
 TESTING_PLUGIN := /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib
 TESTFLAGS := -Xswiftc -load-plugin-library -Xswiftc $(TESTING_PLUGIN)
 
-.PHONY: build run test release app clean sdkcheck
+.PHONY: build run test release app icon clean sdkcheck
+
+icon:
+	SDKROOT=$(SDK) $(SWIFT) scripts/make-icon.swift
+	rm -rf assets/AppIcon.iconset && mkdir -p assets/AppIcon.iconset
+	for s in 16 32 128 256 512; do \
+	  sips -z $$s $$s assets/icon_1024.png --out assets/AppIcon.iconset/icon_$${s}x$${s}.png >/dev/null; \
+	  sips -z $$((s*2)) $$((s*2)) assets/icon_1024.png --out assets/AppIcon.iconset/icon_$${s}x$${s}@2x.png >/dev/null; \
+	done
+	iconutil -c icns assets/AppIcon.iconset -o assets/AppIcon.icns
+	rm -rf assets/AppIcon.iconset
+	@echo "assets/AppIcon.icns ready"
 
 build: sdkcheck
 	SDKROOT=$(SDK) $(SWIFT) build

@@ -18,6 +18,7 @@ final class AppStore {
     private(set) var parentOf: [UInt64: UInt64] = [:]
     private(set) var events: [EventRow] = []
     private(set) var lastRefresh: Date?
+    private(set) var issues = Doctor.Report.empty
 
     // Transient presentation state
     private(set) var ghostIDs: Set<UInt64> = []
@@ -107,8 +108,13 @@ final class AppStore {
             reindex()
         }
 
+        issues = Doctor.diagnose(snapshot: new)
+
         if selection == nil {
-            selection = new.allRoots.first?.children.first?.id ?? new.allRoots.first?.id
+            // Defer: assigning selection inside the same transaction as the
+            // tree swap makes AppKit's List delegate re-enter.
+            let candidate = new.allRoots.first?.children.first?.id ?? new.allRoots.first?.id
+            Task { @MainActor in if self.selection == nil { self.selection = candidate } }
         }
     }
 
