@@ -70,7 +70,7 @@ struct ContentView: View {
                             if count > 0 {
                                 let worst = store.issues.all.map(\.severity).max() ?? .info
                                 Text("\(count)")
-                                    .font(.system(size: 8, weight: .bold))
+                                    .appFont(8, weight: .bold)
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 3.5)
                                     .padding(.vertical, 0.5)
@@ -92,7 +92,7 @@ struct ContentView: View {
                         .overlay(alignment: .topTrailing) {
                             if let diff = store.baselineDiff, diff.totalCount > 0 {
                                 Text("\(diff.totalCount)")
-                                    .font(.system(size: 8, weight: .bold))
+                                    .appFont(8, weight: .bold)
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 3.5)
                                     .padding(.vertical, 0.5)
@@ -142,6 +142,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $store.toolboxShown) { ToolboxView() }
+        .environment(\.fontScale, store.fontScale)
         .task { store.start() }
     }
 
@@ -166,7 +167,7 @@ private struct TrafficStripView: View {
         HStack(spacing: 14) {
             HStack(spacing: 7) {
                 Text("REC")
-                    .font(.system(size: 11, weight: .heavy))
+                    .appFont(11, weight: .heavy)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
@@ -174,12 +175,12 @@ private struct TrafficStripView: View {
                     .symbolEffect(.pulse)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(Theme.rate(store.totalSeries.last ?? 0))
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .appFont(13, weight: .bold, design: .monospaced)
                     Text(elapsed)
-                        .font(.system(size: 9))
+                        .appFont(9)
                         .foregroundStyle(.secondary)
                     Text("TOTAL · all monitored devices")
-                        .font(.system(size: 8, weight: .semibold))
+                        .appFont(8, weight: .semibold)
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -192,7 +193,7 @@ private struct TrafficStripView: View {
                 let talkers = store.topTalkers
                 if talkers.isEmpty {
                     Text("waiting for traffic…")
-                        .font(.system(size: 9.5))
+                        .appFont(9.5)
                         .foregroundStyle(.tertiary)
                 }
                 ForEach(talkers, id: \.id) { talker in
@@ -200,7 +201,7 @@ private struct TrafficStripView: View {
                         store.jump(to: talker.id)
                     } label: {
                         Text("\(talker.name)  \(Theme.rate(talker.rate))")
-                            .font(.system(size: 9.5, design: .monospaced))
+                            .appFont(9.5, design: .monospaced)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -237,7 +238,7 @@ private struct EmptyStateView: View {
             Controllers found: \(store.snapshot?.usbRoots.count ?? 0) · TB domains: \(store.snapshot?.tbRoots.count ?? 0)
             Cross-check with:  ioreg -p IOUSB
             """)
-            .font(.system(size: 11, design: .monospaced))
+            .appFont(11, design: .monospaced)
         } actions: {
             Button("Rescan") { store.refresh() }
         }
@@ -248,24 +249,24 @@ private struct EmptyStateView: View {
 struct LegendView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("Links").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+            Text("Links").appFont(10, weight: .bold).foregroundStyle(.secondary)
             ForEach([Tier.usb1, .usb2, .usb3, .usb4, .thunderbolt, .fabric, .infrastructure, .error], id: \.self) { tier in
                 HStack(spacing: 7) {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(tier.color)
                         .frame(width: 20, height: max(2, tier == .usb1 ? 2 : Theme.edgeWidth(bps: representativeBps(tier))))
-                    Text(tier.legendLabel).font(.system(size: 10))
+                    Text(tier.legendLabel).appFont(10)
                 }
             }
             HStack(spacing: 7) {
                 RoundedRectangle(cornerRadius: 1)
                     .fill(Color.pink)
                     .frame(width: 20, height: 2)
-                Text("video on link (DP tunnel / DisplayLink)").font(.system(size: 10))
+                Text("video on link (DP tunnel / DisplayLink)").appFont(10)
             }
             Divider().frame(width: 180)
             Text("thickness = speed · dashed = USB 1.x\nwide soft bar = system backbone")
-                .font(.system(size: 9))
+                .appFont(9)
                 .foregroundStyle(.secondary)
         }
         .padding(10)

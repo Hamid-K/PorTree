@@ -86,18 +86,18 @@ private struct OutlineNodeRow: View {
     private var label: some View {
         HStack(spacing: 6) {
             Image(systemName: node.category.symbol)
-                .font(.system(size: 10.5))
+                .appFont(10.5)
                 .foregroundStyle(node.tier.color)
                 .frame(width: 18, height: 18)
                 .background(node.tier.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 4))
             Text(node.name)
-                .font(.system(size: 12))
+                .appFont(12)
                 .strikethrough(store.ghostIDs.contains(node.id))
                 .lineLimit(1)
             Spacer(minLength: 2)
             if !node.speedLabel.isEmpty {
                 Text(node.speedLabel)
-                    .font(.system(size: 9.5))
+                    .appFont(9.5)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)

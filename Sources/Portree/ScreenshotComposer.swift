@@ -76,10 +76,10 @@ private struct ComposedShot: View {
                 Circle().fill(Color(red: 1.0, green: 0.74, blue: 0.18)).frame(width: 12, height: 12)
                 Circle().fill(Color(red: 0.16, green: 0.78, blue: 0.25)).frame(width: 12, height: 12)
             }
-            Text("Portree").font(.system(size: 13, weight: .semibold))
+            Text("Portree").appFont(13, weight: .semibold)
             if let snapshot = store.snapshot {
                 Text("\(snapshot.deviceCount) devices · \(snapshot.tbRoots.count) TB/USB4 domains · \(snapshot.pciRoots.count) PCIe roots")
-                    .font(.system(size: 11))
+                    .appFont(11)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -91,7 +91,7 @@ private struct ComposedShot: View {
                 Image(systemName: "paintpalette")
                 Image(systemName: "arrow.clockwise")
             }
-            .font(.system(size: 12))
+            .appFont(12)
             .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 14)
@@ -120,7 +120,7 @@ private struct ComposedShot: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title.uppercased())
-            .font(.system(size: 9.5, weight: .bold))
+            .appFont(9.5, weight: .bold)
             .foregroundStyle(.tertiary)
             .padding(.horizontal, 8)
             .padding(.top, 8)
@@ -136,17 +136,17 @@ private struct ComposedShot: View {
     private func sidebarRow(_ node: DeviceNode, depth: Int, recurse: Bool) -> some View {
         HStack(spacing: 6) {
             Image(systemName: node.category.symbol)
-                .font(.system(size: 10))
+                .appFont(10)
                 .foregroundStyle(node.tier.color)
                 .frame(width: 17, height: 17)
                 .background(node.tier.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 4))
             Text(node.name)
-                .font(.system(size: 11.5))
+                .appFont(11.5)
                 .lineLimit(1)
             Spacer(minLength: 2)
             if !node.speedLabel.isEmpty {
                 Text(node.speedLabel)
-                    .font(.system(size: 9))
+                    .appFont(9)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
@@ -174,19 +174,19 @@ private struct ComposedShot: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     Image(systemName: node.category.symbol)
-                        .font(.system(size: 15, weight: .medium))
+                        .appFont(15, weight: .medium)
                         .foregroundStyle(node.tier.color)
                         .frame(width: 30, height: 30)
                         .background(node.tier.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(node.name).font(.system(size: 13, weight: .semibold))
-                        Text(node.subtitle).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
+                        Text(node.name).appFont(13, weight: .semibold)
+                        Text(node.subtitle).appFont(10.5).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
                 HStack(spacing: 4) {
                     ForEach(["Decoded", "Raw", "Interfaces", "History", "I/O"], id: \.self) { tab in
                         Text(tab)
-                            .font(.system(size: 10.5, weight: tab == "Decoded" ? .semibold : .regular))
+                            .appFont(10.5, weight: tab == "Decoded" ? .semibold : .regular)
                             .padding(.horizontal, 9).padding(.vertical, 3)
                             .background(
                                 tab == "Decoded" ? Color.white.opacity(0.14) : Color.clear,
@@ -224,7 +224,7 @@ private struct ComposedShot: View {
                     inspectorGroup("Doctor") {
                         ForEach(issues) { issue in
                             Label(issue.title, systemImage: "exclamationmark.triangle.fill")
-                                .font(.system(size: 10.5, weight: .semibold))
+                                .appFont(10.5, weight: .semibold)
                                 .foregroundStyle(.orange)
                         }
                     }
@@ -237,15 +237,15 @@ private struct ComposedShot: View {
 
     private func inspectorGroup(_ title: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title.uppercased()).font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+            Text(title.uppercased()).appFont(9, weight: .bold).foregroundStyle(.tertiary)
             content()
         }
     }
 
     private func inspectorRow(_ key: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(key).font(.system(size: 10.5)).foregroundStyle(.secondary).frame(width: 100, alignment: .leading)
-            Text(value).font(.system(size: 10.5, design: .monospaced)).lineLimit(1)
+            Text(key).appFont(10.5).foregroundStyle(.secondary).frame(width: 100, alignment: .leading)
+            Text(value).appFont(10.5, design: .monospaced).lineLimit(1)
             Spacer(minLength: 0)
         }
     }

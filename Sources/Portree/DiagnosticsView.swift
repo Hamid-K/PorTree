@@ -17,10 +17,10 @@ struct DiagnosticsView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Label("Diagnostics", systemImage: "stethoscope")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                 Spacer()
                 Text("auto-run on every change")
-                    .font(.system(size: 9.5))
+                    .appFont(9.5)
                     .foregroundStyle(.tertiary)
             }
             .padding(12)
@@ -29,12 +29,12 @@ struct DiagnosticsView: View {
             if sorted.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 26))
+                        .appFont(26)
                         .foregroundStyle(.green)
                     Text("No issues detected")
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                     Text(summary)
-                        .font(.system(size: 10.5))
+                        .appFont(10.5)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -74,26 +74,26 @@ private struct IssueRow: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: symbol)
                     .foregroundStyle(color)
-                    .font(.system(size: 13))
+                    .appFont(13)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
-                        Text(issue.title).font(.system(size: 11.5, weight: .semibold))
+                        Text(issue.title).appFont(11.5, weight: .semibold)
                         if let node = store.allNodes[issue.nodeID] {
                             Text(node.name)
-                                .font(.system(size: 10.5))
+                                .appFont(10.5)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
                     }
                     Text(issue.detail)
-                        .font(.system(size: 10))
+                        .appFont(10)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "arrow.forward.circle")
                     .foregroundStyle(.tertiary)
-                    .font(.system(size: 11))
+                    .appFont(11)
             }
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)

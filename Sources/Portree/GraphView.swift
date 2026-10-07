@@ -447,6 +447,8 @@ private struct EdgeCanvas: View {
                 if showLabels, edge.bps > 0, !dimmed.contains(edge.id) {
                     let mid = CGPoint(x: (edge.from.x + edge.to.x) / 2, y: (edge.from.y + edge.to.y) / 2)
                     let textColor = edge.tier == .infrastructure ? background.mutedText : color
+                    // Stays .font (Text method): context.resolve needs Text,
+                    // and edge labels scale with canvas zoom, not UI fonts.
                     let text = context.resolve(
                         Text(Format.speedLabel(bps: edge.bps))
                             .font(.system(size: 8, weight: .semibold))
@@ -498,7 +500,7 @@ private struct NodeCard: View {
                 overflowPill("less")
             }
         } else {
-            let fit = TagMetrics.fittingPrefix(tags)
+            let fit = TagMetrics.fittingPrefix(tags, scale: store.fontScale)
             HStack(spacing: 4) {
                 ForEach(Array(tags.prefix(fit).enumerated()), id: \.offset) { _, tag in
                     CapsuleTag(text: tag.text, color: tag.color)
@@ -515,7 +517,7 @@ private struct NodeCard: View {
             store.toggleTagExpansion(node.id)
         } label: {
             Text(label)
-                .font(.system(size: 8.5, weight: .bold))
+                .appFont(8.5, weight: .bold)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
                 .foregroundStyle(.secondary)
@@ -529,18 +531,18 @@ private struct NodeCard: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 7) {
                 Image(systemName: node.category.symbol)
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(node.tier.color)
                     .frame(width: 22, height: 22)
                     .background(node.tier.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 5))
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(node.name)
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .appFont(11.5, weight: .semibold)
                         .strikethrough(isGhost)
                         .lineLimit(1)
                     Text(node.subtitle)
-                        .font(.system(size: 9.5))
+                        .appFont(9.5)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -550,7 +552,7 @@ private struct NodeCard: View {
                         store.toggleCollapsed(node.id)
                     } label: {
                         Text(collapsedCount > 0 ? "+\(collapsedCount)" : "−")
-                            .font(.system(size: 9.5, weight: .bold))
+                            .appFont(9.5, weight: .bold)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1)
                             .background(.quaternary, in: Capsule())
@@ -745,20 +747,21 @@ enum TagList {
 /// Chip-geometry estimates shared by the card's fit calculation and the
 /// layout's per-node height (character-width approximation of CapsuleTag).
 enum TagMetrics {
-    static let rowHeight: CGFloat = 19
     static let contentWidth = TreeLayout.nodeWidth - 18
 
-    static func chipWidth(_ text: String) -> CGFloat {
-        CGFloat(text.count) * 6.3 + 17
+    static func rowHeight(scale: CGFloat) -> CGFloat { 19 * scale }
+
+    static func chipWidth(_ text: String, scale: CGFloat) -> CGFloat {
+        (CGFloat(text.count) * 6.3 + 17) * scale
     }
 
     /// How many leading tags fit on one compact row, reserving room for +N.
-    static func fittingPrefix(_ tags: [TagList.Tag]) -> Int {
-        let budget = contentWidth - 34
+    static func fittingPrefix(_ tags: [TagList.Tag], scale: CGFloat) -> Int {
+        let budget = contentWidth - 34 * scale
         var x: CGFloat = 0
         var count = 0
         for tag in tags {
-            let width = chipWidth(tag.text)
+            let width = chipWidth(tag.text, scale: scale)
             if x + width > budget { break }
             x += width + 4
             count += 1
@@ -767,18 +770,18 @@ enum TagMetrics {
     }
 
     /// Card height when the tag list is expanded and soft-wrapped.
-    static func expandedHeight(_ tags: [TagList.Tag]) -> CGFloat {
+    static func expandedHeight(_ tags: [TagList.Tag], scale: CGFloat) -> CGFloat {
         var rows = 1
         var x: CGFloat = 0
         for tag in tags + [TagList.Tag(text: "less", color: .secondary)] {
-            let width = chipWidth(tag.text)
+            let width = chipWidth(tag.text, scale: scale)
             if x > 0, x + width > contentWidth {
                 rows += 1
                 x = 0
             }
             x += width + 4
         }
-        return TreeLayout.nodeHeight + CGFloat(max(0, rows - 1)) * rowHeight
+        return TreeLayout.nodeHeight + CGFloat(max(0, rows - 1)) * rowHeight(scale: scale)
     }
 
     /// Per-node heights for the layout, from each card's expansion state.
@@ -787,7 +790,10 @@ enum TagMetrics {
         var heights: [UInt64: CGFloat] = [:]
         for id in store.expandedTags {
             guard let node = store.allNodes[id] else { continue }
-            heights[id] = expandedHeight(TagList.tags(node: node, store: store, verbose: false))
+            heights[id] = expandedHeight(
+                TagList.tags(node: node, store: store, verbose: false),
+                scale: store.fontScale
+            )
         }
         return heights
     }
@@ -801,9 +807,9 @@ struct InspectorTagsView: View {
     var body: some View {
         let tags = TagList.tags(node: node, store: store, verbose: true)
         if !tags.isEmpty {
-            FlowLayout(spacing: 5) {
+            FlowLayout(spacing: 6) {
                 ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
-                    CapsuleTag(text: tag.text, color: tag.color)
+                    CapsuleTag(text: tag.text, color: tag.color, size: 11)
                 }
             }
         }
@@ -954,12 +960,14 @@ struct Sparkline: View {
 struct CapsuleTag: View {
     let text: String
     var color: Color = .secondary
+    /// Cards stay dense at 8.5; the inspector renders readable 11pt chips.
+    var size: CGFloat = 8.5
 
     var body: some View {
         Text(text)
-            .font(.system(size: 8.5, weight: .semibold))
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
+            .appFont(size, weight: .semibold)
+            .padding(.horizontal, size > 9 ? 7 : 5)
+            .padding(.vertical, size > 9 ? 2 : 1)
             .foregroundStyle(color)
             .background {
                 // Opaque base under the tint — pure-transparency chips are

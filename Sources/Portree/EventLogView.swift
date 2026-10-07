@@ -10,9 +10,9 @@ struct EventLogView: View {
         @Bindable var store = store
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Text("Event Log").font(.system(size: 11, weight: .semibold))
+                Text("Event Log").appFont(11, weight: .semibold)
                 Text("\(store.events.count) rows")
-                    .font(.system(size: 10))
+                    .appFont(10)
                     .foregroundStyle(.secondary)
                 Spacer()
                 Toggle(isOn: $store.logPaused) {
@@ -24,7 +24,7 @@ struct EventLogView: View {
                 Button("Clear") { store.clearEvents() }
                     .controlSize(.small)
                 Text(store.eventLogPath)
-                    .font(.system(size: 9, design: .monospaced))
+                    .appFont(9, design: .monospaced)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -40,7 +40,7 @@ struct EventLogView: View {
                     }
                     if store.events.isEmpty {
                         Text("No events yet — plug or unplug something.")
-                            .font(.system(size: 11))
+                            .appFont(11)
                             .foregroundStyle(.secondary)
                             .padding(10)
                     }
@@ -73,13 +73,13 @@ private struct EventRowView: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Circle().fill(color).frame(width: 6, height: 6)
             Text(Theme.timestamp(row.date))
-                .font(.system(size: 10, design: .monospaced))
+                .appFont(10, design: .monospaced)
                 .foregroundStyle(.tertiary)
             Text(row.title + (row.count > 1 ? "  ×\(row.count)" : ""))
-                .font(.system(size: 11, weight: .medium))
+                .appFont(11, weight: .medium)
                 .lineLimit(1)
             Text(row.detail)
-                .font(.system(size: 10.5))
+                .appFont(10.5)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer(minLength: 0)

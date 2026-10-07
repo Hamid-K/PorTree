@@ -10,11 +10,11 @@ struct DiffPanelView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Label("Baseline Diff", systemImage: "plus.slash.minus")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                 Spacer()
                 if let diff = store.baselineDiff {
                     Text("vs \(diff.baselineDate.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.system(size: 9.5))
+                        .appFont(9.5)
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -25,10 +25,10 @@ struct DiffPanelView: View {
                 if diff.totalCount == 0 {
                     VStack(spacing: 8) {
                         Image(systemName: "equal.circle.fill")
-                            .font(.system(size: 26)).foregroundStyle(.green)
-                        Text("Identical to baseline").font(.system(size: 12, weight: .semibold))
+                            .appFont(26).foregroundStyle(.green)
+                        Text("Identical to baseline").appFont(12, weight: .semibold)
                         Text("Every device identity matches — nothing added, removed, or changed.")
-                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            .appFont(10.5).foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity)
@@ -76,10 +76,10 @@ struct DiffPanelView: View {
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "camera.metering.center.weighted")
-                        .font(.system(size: 24)).foregroundStyle(.tertiary)
-                    Text("No baseline set").font(.system(size: 12, weight: .semibold))
+                        .appFont(24).foregroundStyle(.tertiary)
+                    Text("No baseline set").appFont(12, weight: .semibold)
                     Text("Capture the current state (or load a saved snapshot JSON),\nthen replug, reboot, or wait — and diff against it.")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .appFont(10.5).foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
@@ -105,7 +105,7 @@ struct DiffPanelView: View {
     private func section(_ title: String, color: Color, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title.uppercased())
-                .font(.system(size: 9.5, weight: .bold))
+                .appFont(9.5, weight: .bold)
                 .foregroundStyle(color)
             content()
         }
@@ -116,15 +116,15 @@ struct DiffPanelView: View {
             if let id { store.jump(to: id) }
         } label: {
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: symbol).foregroundStyle(color).font(.system(size: 12))
+                Image(systemName: symbol).foregroundStyle(color).appFont(12)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.system(size: 11.5, weight: .semibold))
-                    Text(detail).font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text(title).appFont(11.5, weight: .semibold)
+                    Text(detail).appFont(10).foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)
                 }
                 Spacer(minLength: 0)
                 if id != nil {
-                    Image(systemName: "arrow.forward.circle").foregroundStyle(.tertiary).font(.system(size: 11))
+                    Image(systemName: "arrow.forward.circle").foregroundStyle(.tertiary).appFont(11)
                 }
             }
             .padding(7)

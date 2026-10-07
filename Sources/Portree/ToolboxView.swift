@@ -78,7 +78,7 @@ struct ToolboxView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Label("Toolbox", systemImage: "wrench.and.screwdriver")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
             }
@@ -89,7 +89,7 @@ struct ToolboxView: View {
                     ForEach(Self.sections, id: \.0) { section in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(section.0.uppercased())
-                                .font(.system(size: 10, weight: .bold))
+                                .appFont(10, weight: .bold)
                                 .foregroundStyle(.tertiary)
                             ForEach(section.1) { tool in
                                 toolRow(tool)
@@ -103,10 +103,10 @@ struct ToolboxView: View {
         .frame(width: 620, height: 520)
         .sheet(item: $output) { payload in
             VStack(alignment: .leading, spacing: 8) {
-                Text(payload.title).font(.system(size: 12, weight: .semibold, design: .monospaced))
+                Text(payload.title).appFont(12, weight: .semibold, design: .monospaced)
                 ScrollView {
                     Text(payload.text.isEmpty ? "(no output)" : payload.text)
-                        .font(.system(size: 10.5, design: .monospaced))
+                        .appFont(10.5, design: .monospaced)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -123,7 +123,7 @@ struct ToolboxView: View {
     private func toolRow(_ tool: Tool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Text(tool.title).font(.system(size: 12, weight: .semibold))
+                Text(tool.title).appFont(12, weight: .semibold)
                 Spacer()
                 Button("Copy") { copy(tool.command) }
                     .controlSize(.small)
@@ -133,17 +133,17 @@ struct ToolboxView: View {
                         .buttonStyle(.borderedProminent)
                 } else {
                     Text(tool.command.hasPrefix("sudo") ? "needs sudo — copy only" : "streaming — copy only")
-                        .font(.system(size: 9.5))
+                        .appFont(9.5)
                         .foregroundStyle(.tertiary)
                 }
             }
             Text(tool.command)
-                .font(.system(size: 10.5, design: .monospaced))
+                .appFont(10.5, design: .monospaced)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .lineLimit(2)
             Text(tool.note)
-                .font(.system(size: 10))
+                .appFont(10)
                 .foregroundStyle(.tertiary)
         }
         .padding(10)

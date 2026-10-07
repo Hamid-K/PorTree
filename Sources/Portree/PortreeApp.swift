@@ -105,6 +105,13 @@ struct PortreeApp: App {
                     .keyboardShortcut("-", modifiers: .command)
                 Button("Actual Size") { AppStore.shared.zoomAround(factor: 1.0 / AppStore.shared.zoom) }
                     .keyboardShortcut("0", modifiers: .command)
+                Divider()
+                Button("Increase Font Size") { AppStore.shared.adjustFontScale(by: 0.05) }
+                    .keyboardShortcut("=", modifiers: [.command, .option])
+                Button("Decrease Font Size") { AppStore.shared.adjustFontScale(by: -0.05) }
+                    .keyboardShortcut("-", modifiers: [.command, .option])
+                Button("Default Font Size") { AppStore.shared.resetFontScale() }
+                    .keyboardShortcut("0", modifiers: [.command, .option])
             }
         }
     }

@@ -9,8 +9,8 @@ struct HexView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(payload.key).font(.system(size: 13, weight: .semibold, design: .monospaced))
-                Text("\(payload.data.count) bytes").foregroundStyle(.secondary).font(.system(size: 11))
+                Text(payload.key).appFont(13, weight: .semibold, design: .monospaced)
+                Text("\(payload.data.count) bytes").foregroundStyle(.secondary).appFont(11)
                 Spacer()
                 Button("Copy hex") {
                     NSPasteboard.general.clearContents()
@@ -23,7 +23,7 @@ struct HexView: View {
             }
             ScrollView {
                 Text(dump)
-                    .font(.system(size: 11, design: .monospaced))
+                    .appFont(11, design: .monospaced)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

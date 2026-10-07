@@ -68,6 +68,20 @@ final class AppStore {
     var canvasBackground: CanvasBackground = .system {
         didSet { persist(canvasBackground.rawValue, "view.background") }
     }
+    /// UI font scale (0.85–1.3 — fixed card frames cap the useful range).
+    var fontScale: CGFloat = 1.0 {
+        didSet { persist(Double(fontScale), "view.fontScale") }
+    }
+
+    func adjustFontScale(by step: CGFloat) {
+        withAnimation(.snappy) {
+            fontScale = min(1.3, max(0.85, ((fontScale + step) * 20).rounded() / 20))
+        }
+    }
+
+    func resetFontScale() {
+        withAnimation(.snappy) { fontScale = 1.0 }
+    }
     /// Graph pan offset in viewport points (content is scaled by `zoom`).
     var panOffset: CGSize = CGSize(width: 24, height: 24) {
         didSet {
@@ -112,6 +126,8 @@ final class AppStore {
            let restored = CanvasBackground(rawValue: raw) {
             canvasBackground = restored
         }
+        let storedScale = defaults.double(forKey: "portree.view.fontScale")
+        if storedScale > 0 { fontScale = CGFloat(storedScale) }
     }
 
     // MARK: Record mode (live throughput; real counters only)
@@ -521,7 +537,7 @@ final class AppStore {
         withAnimation(.snappy) {
             for node in allNodes.values {
                 let tags = TagList.tags(node: node, store: self, verbose: false)
-                if tags.count > TagMetrics.fittingPrefix(tags) {
+                if tags.count > TagMetrics.fittingPrefix(tags, scale: fontScale) {
                     expandedTags.insert(node.id)
                 }
             }

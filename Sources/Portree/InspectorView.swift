@@ -67,14 +67,14 @@ struct InspectorView: View {
     private func header(_ node: DeviceNode) -> some View {
         HStack(spacing: 8) {
             Image(systemName: node.category.symbol)
-                .font(.system(size: 15, weight: .medium))
+                .appFont(15, weight: .medium)
                 .foregroundStyle(node.tier.color)
                 .frame(width: 30, height: 30)
                 .background(node.tier.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
             VStack(alignment: .leading, spacing: 1) {
-                Text(node.name).font(.system(size: 13, weight: .semibold))
+                Text(node.name).appFont(13, weight: .semibold)
                 Text(node.subtitle.isEmpty ? node.className : node.subtitle)
-                    .font(.system(size: 10.5))
+                    .appFont(10.5)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -83,7 +83,7 @@ struct InspectorView: View {
                 store.searchWeb(for: node)
             } label: {
                 Image(systemName: "globe.badge.chevron.backward")
-                    .font(.system(size: 13))
+                    .appFont(13)
             }
             .buttonStyle(.borderless)
             .help("Search the web for this device (vid:pid + name) — identify unknowns")
@@ -109,10 +109,10 @@ private struct DecodedTab: View {
                             : (issue.severity == .warning ? "exclamationmark.triangle.fill" : "info.circle.fill")
                         VStack(alignment: .leading, spacing: 2) {
                             Label(issue.title, systemImage: symbol)
-                                .font(.system(size: 11.5, weight: .semibold))
+                                .appFont(11.5, weight: .semibold)
                                 .foregroundStyle(color)
                             Text(issue.detail)
-                                .font(.system(size: 10.5))
+                                .appFont(10.5)
                                 .foregroundStyle(.secondary)
                         }
                         .padding(8)
@@ -202,7 +202,7 @@ private struct DecodedTab: View {
     private func group(_ title: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title.uppercased())
-                .font(.system(size: 9.5, weight: .bold))
+                .appFont(9.5, weight: .bold)
                 .foregroundStyle(.tertiary)
             content()
         }
@@ -211,11 +211,11 @@ private struct DecodedTab: View {
     private func row(_ key: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(key)
-                .font(.system(size: 11))
+                .appFont(11)
                 .foregroundStyle(.secondary)
                 .frame(width: 108, alignment: .leading)
             Text(value)
-                .font(.system(size: 11, design: key.contains("VID") || key.contains("UID") || key.contains("Location") ? .monospaced : .default))
+                .appFont(11, design: key.contains("VID") || key.contains("UID") || key.contains("Location") ? .monospaced : .default)
                 .textSelection(.enabled)
             Spacer(minLength: 0)
         }
@@ -240,7 +240,7 @@ private struct RawTab: View {
                 let value = node.properties[key]!
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(key)
-                        .font(.system(size: 10.5, design: .monospaced))
+                        .appFont(10.5, design: .monospaced)
                         .foregroundStyle(.secondary)
                         .frame(width: 150, alignment: .leading)
                         .lineLimit(1)
@@ -250,7 +250,7 @@ private struct RawTab: View {
                             hexPayload = HexPayload(key: key, data: data)
                         } label: {
                             Text(value.displayString + "  ⌗")
-                                .font(.system(size: 10.5, design: .monospaced))
+                                .appFont(10.5, design: .monospaced)
                                 .foregroundStyle(Color.accentColor)
                                 .lineLimit(1)
                         }
@@ -258,7 +258,7 @@ private struct RawTab: View {
                         .help("Open hex viewer")
                     } else {
                         Text(value.displayString)
-                            .font(.system(size: 10.5, design: .monospaced))
+                            .appFont(10.5, design: .monospaced)
                             .textSelection(.enabled)
                             .lineLimit(2)
                     }
@@ -278,7 +278,7 @@ private struct RawTab: View {
                         .joined(separator: "\n")
                     copy(text)
                 }
-                .font(.system(size: 10.5))
+                .appFont(10.5)
                 .padding(.top, 8)
             }
         }
@@ -303,16 +303,16 @@ private struct InterfacesTab: View {
                 Text(node.kind == .tbSwitch || node.kind == .tbDomain
                      ? "No adapter ports published."
                      : "No interfaces published for this node.")
-                    .font(.system(size: 11.5))
+                    .appFont(11.5)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 24)
             }
             ForEach(node.interfaces) { entry in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.title).font(.system(size: 11.5, weight: .semibold))
+                    Text(entry.title).appFont(11.5, weight: .semibold)
                     Text(entry.detail)
-                        .font(.system(size: 10.5))
+                        .appFont(10.5)
                         .foregroundStyle(.secondary)
                 }
                 .padding(8)
@@ -335,23 +335,23 @@ struct LiveNodePanel: View {
         VStack(alignment: .leading, spacing: 6) {
             if store.overdriveIDs.contains(node.id) {
                 Label("OVERCURRENT detected — kernel counter incremented", systemImage: "bolt.trianglebadge.exclamationmark.fill")
-                    .font(.system(size: 10.5, weight: .bold))
+                    .appFont(10.5, weight: .bold)
                     .foregroundStyle(.red)
             }
             if store.isRecording {
                 if let samples = store.series[node.id], samples.contains(where: { $0 > 0 }) {
                     HStack {
-                        Text("I/O").font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+                        Text("I/O").appFont(9, weight: .bold).foregroundStyle(.tertiary)
                         Spacer()
                         Text("now \(Theme.rate(store.rates[node.id] ?? 0)) · peak \(Theme.rate(samples.max() ?? 0))")
-                            .font(.system(size: 9.5, design: .monospaced))
+                            .appFont(9.5, design: .monospaced)
                             .foregroundStyle(.secondary)
                     }
                     Sparkline(samples: Array(samples.suffix(120)), color: node.tier.color)
                         .frame(height: 26)
                 } else {
                     Text("I/O: no byte counters for this device (storage/network only)")
-                        .font(.system(size: 9.5)).foregroundStyle(.tertiary)
+                        .appFont(9.5).foregroundStyle(.tertiary)
                 }
             }
             // Power block — always self-labeled, whether or not recording.
@@ -359,10 +359,10 @@ struct LiveNodePanel: View {
                 let currentMA = store.currentPowerMA[node.id] ?? node.powerSinkMA ?? 0
                 HStack {
                     Text("POWER · negotiated allocation")
-                        .font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+                        .appFont(9, weight: .bold).foregroundStyle(.tertiary)
                     Spacer()
                     Text("\(currentMA) / 3000 mA port limit · \(currentMA * 100 / 3000)%")
-                        .font(.system(size: 9.5, design: .monospaced))
+                        .appFont(9.5, design: .monospaced)
                         .foregroundStyle(currentMA > 2400 ? .orange : .secondary)
                 }
                 if store.isRecording, let history = store.powerSeries[node.id], !history.isEmpty {
@@ -387,9 +387,9 @@ private struct BandwidthTab: View {
             if let share = store.allocatedShare(of: node) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("ALLOCATED (registry truth)")
-                        .font(.system(size: 9.5, weight: .bold)).foregroundStyle(.tertiary)
+                        .appFont(9.5, weight: .bold).foregroundStyle(.tertiary)
                     Text("Negotiated \(node.speedLabel) — \(Int(share * 100))% of the upstream link")
-                        .font(.system(size: 11.5))
+                        .appFont(11.5)
                     ProgressView(value: share)
                         .tint(node.tier.color)
                 }
@@ -398,7 +398,7 @@ private struct BandwidthTab: View {
             if let samples = store.series[node.id], samples.contains(where: { $0 > 0 }) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("LIVE THROUGHPUT (recorded)")
-                        .font(.system(size: 9.5, weight: .bold)).foregroundStyle(.tertiary)
+                        .appFont(9.5, weight: .bold).foregroundStyle(.tertiary)
                     let current = store.rates[node.id] ?? 0
                     let peak = samples.max() ?? 0
                     HStack(spacing: 12) {
@@ -414,17 +414,17 @@ private struct BandwidthTab: View {
                         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
                     if node.linkSpeedBps > 0, peak > 0 {
                         Text("Peak used \(String(format: "%.1f", min(100, peak * 8 / Double(node.linkSpeedBps) * 100)))% of the negotiated link.")
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                            .appFont(10).foregroundStyle(.secondary)
                     }
                 }
             } else {
                 VStack(spacing: 6) {
                     Image(systemName: store.isRecording ? "waveform.badge.magnifyingglass" : "record.circle")
-                        .font(.system(size: 22)).foregroundStyle(.tertiary)
+                        .appFont(22).foregroundStyle(.tertiary)
                     Text(store.isRecording
                          ? "Recording — no byte counters for this device.\nOnly storage and network devices expose real counters; nothing is estimated."
                          : "Start record mode (toolbar ⏺) to sample real byte counters at 1 Hz.")
-                        .font(.system(size: 11))
+                        .appFont(11)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -438,8 +438,8 @@ private struct BandwidthTab: View {
 
     private func stat(_ label: String, _ value: String, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(label).font(.system(size: 9)).foregroundStyle(.tertiary)
-            Text(value).font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(color)
+            Text(label).appFont(9).foregroundStyle(.tertiary)
+            Text(value).appFont(12, weight: .semibold, design: .monospaced).foregroundStyle(color)
         }
     }
 }
@@ -455,7 +455,7 @@ private struct HistoryTab: View {
         VStack(alignment: .leading, spacing: 8) {
             if related.isEmpty {
                 Text("No events for this device in the current session.\nReplug history persists from now on in the event log.")
-                    .font(.system(size: 11.5))
+                    .appFont(11.5)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -464,8 +464,8 @@ private struct HistoryTab: View {
             ForEach(related.reversed()) { row in
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(Theme.timestamp(row.date))  \(row.title)\(row.count > 1 ? "  ×\(row.count)" : "")")
-                        .font(.system(size: 11, weight: .medium))
-                    Text(row.detail).font(.system(size: 10)).foregroundStyle(.secondary)
+                        .appFont(11, weight: .medium)
+                    Text(row.detail).appFont(10).foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
                 .padding(.horizontal, 8)
@@ -474,7 +474,7 @@ private struct HistoryTab: View {
             }
             if node.serialNumber == nil && node.kind == .usbDevice {
                 Text("No serial number — identity is keyed by VID+PID+location (low confidence).")
-                    .font(.system(size: 10))
+                    .appFont(10)
                     .foregroundStyle(.tertiary)
             }
         }

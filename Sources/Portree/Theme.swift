@@ -96,6 +96,38 @@ enum CanvasBackground: String, CaseIterable {
     }
 }
 
+// MARK: - Adjustable UI font scale
+
+private struct FontScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1.0
+}
+
+extension EnvironmentValues {
+    var fontScale: CGFloat {
+        get { self[FontScaleKey.self] }
+        set { self[FontScaleKey.self] = newValue }
+    }
+}
+
+private struct AppFontModifier: ViewModifier {
+    @Environment(\.fontScale) private var scale
+    let size: CGFloat
+    let weight: Font.Weight
+    let design: Font.Design
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: size * scale, weight: weight, design: design))
+    }
+}
+
+extension View {
+    /// `.font(.system(size:))` routed through the user-adjustable scale
+    /// (⌥⌘+ / ⌥⌘− / ⌥⌘0).
+    func appFont(_ size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default) -> some View {
+        modifier(AppFontModifier(size: size, weight: weight, design: design))
+    }
+}
+
 enum Theme {
     /// Edge stroke width by negotiated speed — thickness is the second visual
     /// speed encoding after color.
