@@ -12,6 +12,7 @@ extension Tier {
         case .usb3: return .blue
         case .usb4: return .purple
         case .thunderbolt: return .indigo
+        case .fabric: return .cyan
         case .infrastructure: return Color.secondary.opacity(0.9)
         case .error: return .red
         }
@@ -24,6 +25,7 @@ extension Tier {
         case .usb3: return "USB 3.x · 5–20 Gb/s"
         case .usb4: return "USB4 · tunneled 40 Gb/s+"
         case .thunderbolt: return "Thunderbolt / USB4 fabric"
+        case .fabric: return "Apple Fabric · SoC interconnect"
         case .infrastructure: return "Infrastructure (controllers, idle)"
         case .error: return "Error / removed"
         }
@@ -116,9 +118,10 @@ enum Theme {
     }
 
     /// Protocol-stack badge for top-level sections (corner chip + backbone
-    /// edge color): USB blue, Thunderbolt indigo, PCIe teal.
-    static func protocolBadge(for kind: PortreeCore.NodeKind) -> (label: String, color: Color)? {
-        switch kind {
+    /// edge color): USB blue, Thunderbolt indigo, PCIe teal, Apple Fabric cyan.
+    static func protocolBadge(for node: PortreeCore.DeviceNode) -> (label: String, color: Color)? {
+        if node.tier == .fabric { return ("Fabric", .cyan) }
+        switch node.kind {
         case .usbController: return ("USB", .blue)
         case .tbDomain: return ("TB/USB4", .indigo)
         case .pciDevice: return ("PCIe", .teal)

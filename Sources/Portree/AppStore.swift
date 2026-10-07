@@ -290,6 +290,23 @@ final class AppStore {
             .compactMap { id, rate in allNodes[id].map { ($0.name, rate, id) } }
     }
 
+    /// Headless screenshot support (`portree --export-screenshot`): capture a
+    /// live snapshot, pick a visually rich selection, seed a couple of honest
+    /// event rows so the composed panes aren't empty.
+    func prepareHeadlessScreenshot() {
+        apply(Snapshot.capture())
+        selection = allNodes.values.first { $0.twin != nil }?.id
+            ?? allNodes.values.first { $0.kind == .tbSwitch && parentOf[$0.id] != nil }?.id
+            ?? allNodes.values.first?.id
+        if let snapshot {
+            appendEvent(EventRow(
+                kind: .rescan,
+                title: "Snapshot captured",
+                detail: "\(snapshot.deviceCount) devices · \(snapshot.tbRoots.count) TB/USB4 domains · \(snapshot.pciRoots.count) PCIe roots"
+            ))
+        }
+    }
+
     // MARK: Graph viewport
 
     func zoomAround(factor: CGFloat, anchor: CGPoint? = nil) {

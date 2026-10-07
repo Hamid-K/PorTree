@@ -111,7 +111,7 @@ A 10-agent review (27 findings) confirmed six majors — **all fixed** (sampler 
 ## 6. Open questions (decide before open-sourcing)
 
 1. ~~**Name.**~~ **Resolved 2026-10-07: the app is named _Portree_** (port + tree). The repo folder may still be called `Hubble` locally — rename at will; nothing in the build depends on the folder name.
-2. **License.** MIT or Apache-2.0 (Apache's patent grant is nice-to-have; MIT is simpler).
+2. ~~**License.**~~ **Resolved 2026-10-08: PolyForm Noncommercial 1.0.0** (free personal/noncommercial use, no commercial use) — see LICENSE.md.
 3. Minimum macOS for other users: code targets macOS 15+, but registry keys are verified only on 26/27 — document as "best on Tahoe+".
 
 ## 7. Deliverables in this repo

@@ -235,7 +235,7 @@ struct LegendView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text("Links").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
-            ForEach([Tier.usb1, .usb2, .usb3, .usb4, .thunderbolt, .infrastructure, .error], id: \.self) { tier in
+            ForEach([Tier.usb1, .usb2, .usb3, .usb4, .thunderbolt, .fabric, .infrastructure, .error], id: \.self) { tier in
                 HStack(spacing: 7) {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(tier.color)

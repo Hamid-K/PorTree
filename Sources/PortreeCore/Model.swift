@@ -168,25 +168,55 @@ public struct Snapshot: Sendable, Codable {
     }
 
     /// The one way to take a full snapshot — GUI rescans and `--dump` must
-    /// never diverge on what they capture.
+    /// never diverge on what they capture. The System node is enriched with
+    /// MEASURED host capabilities (registry truth: TB generation, per-port
+    /// bandwidth, port counts, USB controller revisions, live DP tunnels) —
+    /// never invented spec numbers.
     public static func capture() -> Snapshot {
+        let usbRoots = USBTopologyBuilder.build()
         let tbRoots = TBTopologyBuilder.build()
         var system = SystemInfo.node()
-        // Measured fabric capability straight from the registry (vs the
-        // reference-table specs, which are per chip family).
+        var props = system.properties
+
+        // Thunderbolt: generation from the host switches' Thunderbolt Version
+        // (64 = USB4 v2 host → TB5-class, 32 = USB4/TB4, 2 = TB3), bandwidth
+        // from the best receptacle capability, port count from the domains.
+        let hostSwitches = tbRoots.flatMap { $0.flattened() }
+            .filter { $0.kind == .tbSwitch && $0.properties["Depth"]?.intValue == 0 }
+        let tbVersion = hostSwitches.compactMap { $0.properties["Thunderbolt Version"]?.intValue }.max() ?? 0
+        let tbGeneration: String? = tbVersion >= 64 ? "Thunderbolt 5 / USB4 v2"
+            : tbVersion >= 32 ? "Thunderbolt 4 / USB4"
+            : tbVersion > 0 ? "Thunderbolt 3" : nil
         let capability = tbRoots.map(\.speedLabel).filter { !$0.isEmpty }.max()
-        if let capability {
-            var props = system.properties
-            props["Measured: Thunderbolt"] = .string("\(capability) · \(tbRoots.count) domain\(tbRoots.count == 1 ? "" : "s")")
-            system = DeviceNode(
-                id: system.id, kind: system.kind, name: system.name, subtitle: system.subtitle,
-                className: system.className, category: system.category, tier: system.tier,
-                speedLabel: system.speedLabel, linkSpeedBps: system.linkSpeedBps,
-                properties: props
-            )
+        if let tbGeneration {
+            var parts = [tbGeneration]
+            if let capability { parts.append("\(capability) per port") }
+            parts.append("\(tbRoots.count) port\(tbRoots.count == 1 ? "" : "s")")
+            props["Measured: Thunderbolt"] = .string(parts.joined(separator: " · "))
         }
+
+        // USB: controller count and best protocol revision.
+        let usbRevisions = usbRoots.compactMap { $0.properties["UsbHostControllerProtocolRevision"]?.stringValue }
+        if !usbRoots.isEmpty {
+            let revision = usbRevisions.max().map { "USB \($0)" } ?? "XHCI"
+            props["Measured: USB"] = .string("\(usbRoots.count) controllers · \(revision)")
+        }
+
+        // DisplayPort: tunnels active right now (max supported displays is a
+        // chip spec macOS does not publish — see Spec rows when known).
+        let dpTunnels = tbRoots.flatMap { $0.flattened() }.map(\.videoTunnelCount).reduce(0, +)
+        props["Measured: DisplayPort"] = .string(
+            dpTunnels > 0 ? "\(dpTunnels) tunnel\(dpTunnels == 1 ? "" : "s") active now" : "no tunnels active now"
+        )
+
+        system = DeviceNode(
+            id: system.id, kind: system.kind, name: system.name, subtitle: system.subtitle,
+            className: system.className, category: system.category, tier: system.tier,
+            speedLabel: system.speedLabel, linkSpeedBps: system.linkSpeedBps,
+            properties: props
+        )
         return Snapshot(
-            usbRoots: USBTopologyBuilder.build(),
+            usbRoots: usbRoots,
             tbRoots: tbRoots,
             pciRoots: PCITopologyBuilder.build(tbRoots: tbRoots),
             systemNode: system

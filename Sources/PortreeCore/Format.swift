@@ -3,7 +3,7 @@ import Foundation
 /// Protocol/speed tier used for color coding. Edge/border color derives from
 /// this; the speed text itself is always shown too (never color alone).
 public enum Tier: String, Sendable, Codable, Hashable {
-    case usb1, usb2, usb3, usb4, thunderbolt, infrastructure, error
+    case usb1, usb2, usb3, usb4, thunderbolt, fabric, infrastructure, error
 }
 
 public enum Format {

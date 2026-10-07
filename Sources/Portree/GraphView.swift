@@ -150,9 +150,50 @@ struct GraphView: View {
 
 // MARK: - Image export
 
-/// Renders the full graph (current orientation, fold state, background and
-/// edge labels — transient flow animation excluded) offscreen at 2× and saves
-/// PNG or JPEG to ~/Downloads.
+/// Static full-detail rendering of the graph (edge labels on, selection ring
+/// kept, transient flow animation excluded). Shared by the PNG/JPEG export
+/// and the headless screenshot composer.
+struct GraphCanvas: View {
+    let store: AppStore
+    let layout: TreeLayout
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            store.canvasBackground.color
+            EdgeCanvas(
+                edges: layout.edges,
+                horizontal: layout.orientation == .leftToRight,
+                dimmed: [],
+                flagged: store.issues.flaggedEdges,
+                flow: [:],
+                time: 0,
+                zoom: 1.0,
+                background: store.canvasBackground
+            )
+            ForEach(layout.visibleNodes) { node in
+                let position = layout.positions[node.id] ?? .zero
+                NodeCard(
+                    node: node,
+                    collapsedCount: store.collapsed.contains(node.id) ? node.flattened().count - 1 : 0,
+                    isSelected: store.selection == node.id,
+                    isGhost: store.ghostIDs.contains(node.id),
+                    isArrival: false,
+                    isReenumerated: false,
+                    isDimmed: false,
+                    isMatch: false
+                )
+                .frame(width: TreeLayout.nodeWidth, height: TreeLayout.nodeHeight)
+                .position(
+                    x: position.x + TreeLayout.nodeWidth / 2,
+                    y: position.y + TreeLayout.nodeHeight / 2
+                )
+            }
+        }
+        .frame(width: layout.size.width, height: layout.size.height)
+    }
+}
+
+/// Renders the full graph offscreen at 2× and saves PNG or JPEG to ~/Downloads.
 @MainActor
 enum GraphImageExporter {
     enum ImageFormat: String {
@@ -169,39 +210,8 @@ enum GraphImageExporter {
             collapsed: store.collapsed,
             orientation: store.orientation
         )
-        let content = ZStack(alignment: .topLeading) {
-            store.canvasBackground.color
-            EdgeCanvas(
-                edges: layout.edges,
-                horizontal: layout.orientation == .leftToRight,
-                dimmed: [],
-                flagged: store.issues.flaggedEdges,
-                flow: [:],
-                time: 0,
-                zoom: 1.0,   // full detail: edge labels on
-                background: store.canvasBackground
-            )
-            ForEach(layout.visibleNodes) { node in
-                let position = layout.positions[node.id] ?? .zero
-                NodeCard(
-                    node: node,
-                    collapsedCount: store.collapsed.contains(node.id) ? node.flattened().count - 1 : 0,
-                    isSelected: false,
-                    isGhost: store.ghostIDs.contains(node.id),
-                    isArrival: false,
-                    isReenumerated: false,
-                    isDimmed: false,
-                    isMatch: false
-                )
-                .frame(width: TreeLayout.nodeWidth, height: TreeLayout.nodeHeight)
-                .position(
-                    x: position.x + TreeLayout.nodeWidth / 2,
-                    y: position.y + TreeLayout.nodeHeight / 2
-                )
-            }
-        }
-        .frame(width: layout.size.width, height: layout.size.height)
-        .environment(store)
+        let content = GraphCanvas(store: store, layout: layout)
+            .environment(store)
 
         let renderer = ImageRenderer(content: content)
         renderer.scale = 2.0
@@ -351,8 +361,15 @@ private struct EdgeCanvas: View {
                 let opacity = dimmed.contains(edge.id) ? 0.15 : 0.85
 
                 if edge.isBackbone {
-                    // System backbone: soft wide bar + protocol-colored core.
-                    let protocolColor = Theme.protocolBadge(for: edge.childKind)?.color ?? .gray
+                    // System backbone: soft wide bar + protocol-colored core
+                    // (Apple-Fabric-attached devices get the fabric color).
+                    let protocolColor: Color = switch edge.childKind {
+                    case _ where edge.tier == .fabric: .cyan
+                    case .usbController: .blue
+                    case .tbDomain: .indigo
+                    case .pciDevice: .teal
+                    default: .gray
+                    }
                     context.stroke(
                         path,
                         with: .color(protocolColor.opacity(opacity * 0.18)),
@@ -517,8 +534,11 @@ private struct NodeCard: View {
                     }
                     if node.isDisplayLink { CapsuleTag(text: "DisplayLink", color: .pink) }
                     if node.kind == .system {
-                        if let measured = node.properties["Measured: Thunderbolt"]?.stringValue {
-                            CapsuleTag(text: measured, color: .indigo)
+                        if let tb = node.properties["Measured: Thunderbolt"]?.stringValue {
+                            CapsuleTag(text: tb, color: .indigo)
+                        }
+                        if let usb = node.properties["Measured: USB"]?.stringValue {
+                            CapsuleTag(text: usb, color: .blue)
                         }
                         if let displays = node.properties["Spec: Displays"]?.stringValue {
                             CapsuleTag(text: displays, color: .secondary)
@@ -545,7 +565,7 @@ private struct NodeCard: View {
         )
         .overlay(alignment: .topTrailing) {
             // Protocol-stack corner badge for top-level sections.
-            if let badge = Theme.protocolBadge(for: node.kind),
+            if let badge = Theme.protocolBadge(for: node),
                node.kind != .pciDevice || store.parentOf[node.id] == nil || store.allNodes[store.parentOf[node.id]!]?.kind == .system {
                 CapsuleTag(text: badge.label, color: badge.color)
                     .offset(x: -6, y: -7)

@@ -73,7 +73,8 @@ public enum TBTopologyBuilder {
         var childSwitches: [DeviceNode] = []
         var activeLinkTenthsGbps: Int64 = 0
 
-        var dpAdapterCount: Int64 = 0
+        var dpInCount: Int64 = 0    // video consumed here → this device is a display
+        var dpOutCount: Int64 = 0   // video re-emitted → DP adapter / dock output
         let children = Registry.children(of: entry, plane: "IOService")
         defer { children.forEach { IOObjectRelease($0) } }
         for port in children {
@@ -83,9 +84,9 @@ public enum TBTopologyBuilder {
 
             // DP IN/OUT adapters (0xE0101/0xE0102) = video tunneled through
             // this switch on reserved fabric bandwidth.
-            if let adapterType = portProps["Adapter Type"]?.intValue,
-               adapterType == 917_761 || adapterType == 917_762 {
-                dpAdapterCount += 1
+            if let adapterType = portProps["Adapter Type"]?.intValue {
+                if adapterType == 917_761 { dpInCount += 1 }
+                if adapterType == 917_762 { dpOutCount += 1 }
             }
 
             // Active lane-port link speed: Link Bandwidth is in 0.1 Gb/s units
@@ -125,9 +126,16 @@ public enum TBTopologyBuilder {
         // Device-side DP adapters mean this switch's upstream link carries
         // tunneled video on reserved bandwidth (root-side DP IN is just the
         // GPU feeding the fabric — not a link property).
-        if !isRoot, dpAdapterCount > 0 {
-            props["Portree DPTunnels"] = .int(dpAdapterCount)
+        if !isRoot, dpInCount + dpOutCount > 0 {
+            props["Portree DPTunnels"] = .int(dpInCount + dpOutCount)
         }
+        // Icon family from what the device DOES with video: consuming DP
+        // makes it a display (the Dell U2725QE), only re-emitting makes it a
+        // DP adapter/dock output (the Cable Matters TB3→DP).
+        let category: DeviceCategory = isRoot ? .tbSwitch
+            : dpInCount > 0 ? .display
+            : dpOutCount > 0 ? .adapter
+            : .tbSwitch
         // Apple Silicon host switches self-report Device Model Name = "iOS";
         // ignore the model at depth 0.
         let model = isRoot ? nil : props["Device Model Name"]?.stringValue
@@ -157,7 +165,7 @@ public enum TBTopologyBuilder {
             name: name,
             subtitle: subtitleParts.joined(separator: " · "),
             className: Registry.className(of: entry),
-            category: .tbSwitch,
+            category: category,
             tier: activeLinkTenthsGbps > 0 ? .thunderbolt : .infrastructure,
             speedLabel: speedLabel,
             linkSpeedBps: activeLinkTenthsGbps * 100_000_000,

@@ -70,7 +70,17 @@ public enum PCITopologyBuilder {
         let firmware = (props["Firmware Revision"]?.stringValue ?? "").trimmingCharacters(in: .whitespaces)
         let tunneled = props["IOPCITunnelled"]?.boolValue == true
 
+        // The registry says where this controller really hangs: internal
+        // Apple Silicon NVMe reports "Apple Fabric" (the ANS coprocessor on
+        // the SoC — not PCIe), while enclosure NVMe sits behind tunneled
+        // PCIe bridges. Surface that so the standalone placement reads as
+        // truth, not a layout bug.
+        let interconnect = props["Physical Interconnect"]?.stringValue ?? "NVMe"
+        let location = props["Physical Interconnect Location"]?.stringValue
+        let onFabric = interconnect == "Apple Fabric"
+
         var subtitleParts = ["NVMe"]
+        if let location { subtitleParts.append(location) }
         if !firmware.isEmpty { subtitleParts.append("fw \(firmware)") }
         if !serial.isEmpty { subtitleParts.append(serial) }
 
@@ -81,8 +91,8 @@ public enum PCITopologyBuilder {
             subtitle: subtitleParts.joined(separator: " · "),
             className: Registry.className(of: controller),
             category: .storage,
-            tier: tunneled ? .thunderbolt : .infrastructure,
-            speedLabel: "NVMe",
+            tier: tunneled ? .thunderbolt : (onFabric ? .fabric : .infrastructure),
+            speedLabel: interconnect,
             linkSpeedBps: 0,
             properties: props
         )

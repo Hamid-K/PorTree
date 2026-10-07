@@ -31,6 +31,16 @@ struct PortreeApp: App {
         // Headless mode: `portree --dump` prints the full snapshot as JSON and
         // exits — used for scripting and for verifying the data layer without
         // a window.
+        // Headless press-shot: `portree --export-screenshot <path>` renders
+        // the composed app view (live data) to a PNG and exits.
+        if let flagIndex = CommandLine.arguments.firstIndex(of: "--export-screenshot"),
+           CommandLine.arguments.count > flagIndex + 1 {
+            let url = URL(fileURLWithPath: CommandLine.arguments[flagIndex + 1])
+            let ok = ScreenshotComposer.export(to: url)
+            FileHandle.standardError.write(Data((ok ? "wrote \(url.path)\n" : "screenshot export failed\n").utf8))
+            exit(ok ? 0 : 1)
+        }
+
         if CommandLine.arguments.contains("--dump") {
             let snapshot = Snapshot.capture()
             if let data = try? Exporters.json(snapshot) {
