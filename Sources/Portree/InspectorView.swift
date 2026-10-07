@@ -150,6 +150,12 @@ private struct DecodedTab: View {
                     row("Mode", displayMode)
                 }
             }
+            if let camera = store.cameraInfo[node.id] {
+                group("Camera") {
+                    row("Capability", camera.text)
+                    row("Streaming", camera.inUse ? "IN USE by another app right now" : "idle")
+                }
+            }
             group("Power & ownership") {
                 if let power = node.powerSinkMA {
                     row("Power sink", "\(Format.milliamps(power))  /  3000 mA port limit")

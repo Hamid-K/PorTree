@@ -561,6 +561,12 @@ private struct NodeCard: View {
                     } else if node.videoTunnelCount > 0 {
                         CapsuleTag(text: "DP ×\(node.videoTunnelCount)", color: .pink)
                     }
+                    if let camera = store.cameraInfo[node.id] {
+                        CapsuleTag(text: camera.text, color: .pink)
+                        if camera.inUse {
+                            CapsuleTag(text: "● IN USE", color: .red)
+                        }
+                    }
                     if node.isDisplayLink { CapsuleTag(text: "DisplayLink", color: .pink) }
                     if node.kind == .system {
                         if let tb = node.properties["Measured: Thunderbolt"]?.stringValue {

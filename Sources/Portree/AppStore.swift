@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import AVFoundation
 import UniformTypeIdentifiers
 import PortreeCore
 
@@ -23,6 +24,10 @@ final class AppStore {
     /// Live display mode per display node ("3840×2160 @ 120 Hz · DisplayPort
     /// · TB/USB4 tunnel"), matched via NSScreen names + CoreGraphics modes.
     private(set) var displayModes: [UInt64: String] = [:]
+    /// Camera capability per video node ("up to 1920×1080 @ 60 fps · UVC"),
+    /// matched by the VID/PID AVCaptureDevice.modelID carries; `inUse` means
+    /// another app is streaming from it right now.
+    private(set) var cameraInfo: [UInt64: (text: String, inUse: Bool)] = [:]
 
     // Transient presentation state
     private(set) var ghostIDs: Set<UInt64> = []
@@ -194,6 +199,7 @@ final class AppStore {
         issues = Doctor.diagnose(snapshot: new)
         recomputeBaselineDiff()
         updateDisplayModes()
+        updateCameraInfo()
 
         if selection == nil {
             // Defer: assigning selection inside the same transaction as the
@@ -565,6 +571,54 @@ final class AppStore {
         }
 
         displayModes = result
+    }
+
+    // MARK: Camera capability (UVC format list via AVFoundation — generic:
+    // enumeration needs no TCC consent; only actual capture would)
+
+    private func updateCameraInfo() {
+        var result: [UInt64: (text: String, inUse: Bool)] = [:]
+        let devices = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.external, .builtInWideAngleCamera],
+            mediaType: .video,
+            position: .unspecified
+        ).devices
+
+        var claimed: Set<UInt64> = []
+        for camera in devices {
+            // modelID carries identity generically: "UVC Camera VendorID_1133 ProductID_2142"
+            guard let vid = parse(camera.modelID, after: "VendorID_"),
+                  let pid = parse(camera.modelID, after: "ProductID_") else { continue }
+            guard let node = allNodes.values.first(where: {
+                !claimed.contains($0.id) && $0.vendorID == vid && $0.productID == pid
+            }) else { continue }
+            claimed.insert(node.id)
+
+            // Best capability across the advertised UVC formats.
+            var bestArea: Int32 = 0
+            var best: (w: Int32, h: Int32, fps: Double)?
+            for format in camera.formats {
+                let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                let fps = format.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 0
+                if dims.width * dims.height > bestArea
+                    || (dims.width * dims.height == bestArea && fps > (best?.fps ?? 0)) {
+                    bestArea = dims.width * dims.height
+                    best = (dims.width, dims.height, fps)
+                }
+            }
+            guard let best else { continue }
+            let inUse = camera.isInUseByAnotherApplication
+            result[node.id] = (
+                String(format: "up to %d×%d @ %.0f fps · UVC", best.w, best.h, best.fps),
+                inUse
+            )
+        }
+        cameraInfo = result
+    }
+
+    private func parse(_ text: String, after marker: String) -> Int64? {
+        guard let range = text.range(of: marker) else { return nil }
+        return Int64(text[range.upperBound...].prefix(while: \.isNumber))
     }
 
     // MARK: Baseline diff (capture/load a frozen state, compare against live)
