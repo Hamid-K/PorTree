@@ -624,6 +624,32 @@ final class AppStore {
         displayModes = result
     }
 
+    // MARK: Web identification
+
+    /// Open the default browser searching for this device's raw identity —
+    /// the lsusb-style vid:pid pair is the most-indexed token on the web,
+    /// backed by the product/vendor strings.
+    func searchWeb(for node: DeviceNode) {
+        var terms: [String] = []
+        if let vid = node.vendorID, let pid = node.productID {
+            terms.append(String(format: "%04llx:%04llx", vid, pid))
+            terms.append("USB")
+        }
+        if node.kind == .tbSwitch {
+            terms.append("Thunderbolt")
+            if let vid = node.properties["Device Vendor ID"]?.intValue,
+               let did = node.properties["Device Model ID"]?.intValue {
+                terms.append(String(format: "%04llx:%04llx", vid, did))
+            }
+        }
+        terms.append("\"\(node.name)\"")
+        let query = terms.joined(separator: " ")
+        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://www.google.com/search?q=\(encoded)") else { return }
+        NSWorkspace.shared.open(url)
+        appendEvent(EventRow(kind: .info, title: "Web search opened", detail: query, nodeID: node.id))
+    }
+
     // MARK: Camera capability (UVC format list via AVFoundation — generic:
     // enumeration needs no TCC consent; only actual capture would)
 

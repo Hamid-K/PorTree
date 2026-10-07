@@ -621,6 +621,8 @@ private struct NodeCard: View {
             if let crossLink = node.crossLinkID, store.allNodes[crossLink] != nil {
                 Button("Jump to linked node") { store.jump(to: crossLink) }
             }
+            Divider()
+            Button("Search web for this device") { store.searchWeb(for: node) }
         }
         .animation(.easeOut(duration: 0.35), value: isArrival)
         .help(node.name + (node.speedLabel.isEmpty ? "" : " · \(node.speedLabel)"))
@@ -847,28 +849,105 @@ struct FlowLayout: Layout {
     }
 }
 
-/// Tiny last-60s throughput trace drawn along a node card's bottom while
-/// recording.
+/// [Double] as an animatable vector so chart paths MORPH between samples
+/// instead of jumping. Unequal lengths are zero-padded so interpolation never
+/// crashes while a ring buffer is still filling.
+struct AnimatableVector: VectorArithmetic {
+    var values: [Double]
+
+    static var zero: AnimatableVector { AnimatableVector(values: []) }
+
+    static func + (a: AnimatableVector, b: AnimatableVector) -> AnimatableVector {
+        combine(a, b, +)
+    }
+
+    static func - (a: AnimatableVector, b: AnimatableVector) -> AnimatableVector {
+        combine(a, b, -)
+    }
+
+    private static func combine(_ a: AnimatableVector, _ b: AnimatableVector, _ op: (Double, Double) -> Double) -> AnimatableVector {
+        let count = max(a.values.count, b.values.count)
+        var out = [Double](repeating: 0, count: count)
+        for index in 0..<count {
+            let left = index < a.values.count ? a.values[index] : 0
+            let right = index < b.values.count ? b.values[index] : 0
+            out[index] = op(left, right)
+        }
+        return AnimatableVector(values: out)
+    }
+
+    mutating func scale(by rhs: Double) {
+        for index in values.indices { values[index] *= rhs }
+    }
+
+    var magnitudeSquared: Double {
+        values.reduce(0) { $0 + $1 * $1 }
+    }
+}
+
+private struct LiveChartShape: Shape {
+    var vector: AnimatableVector
+    var closed: Bool   // area fill variant closes down to the baseline
+
+    var animatableData: AnimatableVector {
+        get { vector }
+        set { vector = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let values = vector.values
+        guard values.count > 1 else { return path }
+        let peak = max(values.max() ?? 1, 1)
+        let stepX = rect.width / CGFloat(values.count - 1)
+        func point(_ index: Int) -> CGPoint {
+            CGPoint(
+                x: rect.minX + CGFloat(index) * stepX,
+                y: rect.minY + rect.height * (1 - CGFloat(values[index] / peak))
+            )
+        }
+        if closed { path.move(to: CGPoint(x: rect.minX, y: rect.maxY)) }
+        for index in values.indices {
+            if index == 0 && !closed { path.move(to: point(0)) } else { path.addLine(to: point(index)) }
+        }
+        if closed {
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.closeSubpath()
+        }
+        return path
+    }
+}
+
+/// Animated line chart with a soft gradient fill — the ring is padded to a
+/// constant length so each new sample morphs the path smoothly (≈1 s linear,
+/// matching the sampling tick) instead of snapping.
 struct Sparkline: View {
     let samples: [Double]
     let color: Color
+    var capacity: Int = 120
+    var filled: Bool = true
+    var lineWidth: CGFloat = 1.4
+
+    private var padded: [Double] {
+        let tail = Array(samples.suffix(capacity))
+        return Array(repeating: 0, count: max(0, capacity - tail.count)) + tail
+    }
 
     var body: some View {
-        GeometryReader { geo in
-            let peak = max(samples.max() ?? 1, 1)
-            Path { path in
-                guard samples.count > 1 else { return }
-                let stepX = geo.size.width / CGFloat(samples.count - 1)
-                for (index, value) in samples.enumerated() {
-                    let point = CGPoint(
-                        x: CGFloat(index) * stepX,
-                        y: geo.size.height * (1 - CGFloat(value / peak))
-                    )
-                    if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
-                }
+        let vector = AnimatableVector(values: padded)
+        ZStack {
+            if filled {
+                LiveChartShape(vector: vector, closed: true)
+                    .fill(LinearGradient(
+                        colors: [color.opacity(0.32), color.opacity(0.02)],
+                        startPoint: .top, endPoint: .bottom
+                    ))
             }
-            .stroke(color, style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
+            LiveChartShape(vector: vector, closed: false)
+                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
         }
+        .animation(.linear(duration: 0.95), value: padded)
+        .drawingGroup()
     }
 }
 

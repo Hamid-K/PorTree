@@ -30,6 +30,17 @@ struct InspectorView: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 6)
 
+                // Live I/O + power + the card's tags, right under the tabs
+                // where the rest of the selection's data is — not stranded at
+                // the bottom of the pane.
+                VStack(alignment: .leading, spacing: 8) {
+                    LiveNodePanel(node: node)
+                    InspectorTagsView(node: node)
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+                Divider()
+
                 ScrollView {
                     switch tab {
                     case .decoded: DecodedTab(node: node)
@@ -40,14 +51,6 @@ struct InspectorView: View {
                     }
                 }
 
-                // Pinned footer: live I/O + power for the selection, and every
-                // tag the card wears — full-size for recognition.
-                Divider()
-                VStack(alignment: .leading, spacing: 8) {
-                    LiveNodePanel(node: node)
-                    InspectorTagsView(node: node)
-                }
-                .padding(10)
             }
             .sheet(item: $hexPayload) { payload in
                 HexView(payload: payload)
@@ -76,6 +79,14 @@ struct InspectorView: View {
                     .lineLimit(1)
             }
             Spacer()
+            Button {
+                store.searchWeb(for: node)
+            } label: {
+                Image(systemName: "globe.badge.chevron.backward")
+                    .font(.system(size: 13))
+            }
+            .buttonStyle(.borderless)
+            .help("Search the web for this device (vid:pid + name) — identify unknowns")
         }
         .padding(12)
     }

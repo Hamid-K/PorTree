@@ -182,7 +182,7 @@ private struct TrafficStripView: View {
             }
             .frame(width: 168, alignment: .leading)
 
-            TrafficBars(samples: Array(store.totalSeries.suffix(150)))
+            Sparkline(samples: store.totalSeries, color: .green, capacity: 150, lineWidth: 1.6)
                 .frame(maxWidth: .infinity, maxHeight: 34)
 
             VStack(alignment: .trailing, spacing: 1) {
@@ -215,28 +215,6 @@ private struct TrafficStripView: View {
         guard let start = store.recordingStart else { return "" }
         let seconds = Int(Date().timeIntervalSince(start))
         return String(format: "REC %d:%02d · %d samples", seconds / 60, seconds % 60, store.sampleCount)
-    }
-}
-
-private struct TrafficBars: View {
-    let samples: [Double]
-
-    var body: some View {
-        Canvas { context, size in
-            guard !samples.isEmpty else { return }
-            let peak = max(samples.max() ?? 1, 1)
-            let barWidth = max(2, size.width / CGFloat(max(samples.count, 60)) - 1)
-            for (index, value) in samples.enumerated() {
-                let height = max(1.5, size.height * CGFloat(value / peak))
-                let x = size.width - CGFloat(samples.count - index) * (barWidth + 1)
-                guard x > -barWidth else { continue }
-                let rect = CGRect(x: x, y: size.height - height, width: barWidth, height: height)
-                context.fill(
-                    Path(roundedRect: rect, cornerRadius: 1),
-                    with: .color(value > 0 ? .green.opacity(0.75) : .gray.opacity(0.25))
-                )
-            }
-        }
     }
 }
 
