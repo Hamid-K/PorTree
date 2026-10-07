@@ -14,7 +14,9 @@ enum ScreenshotComposer {
     static func export(to url: URL) -> Bool {
         NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
         let store = AppStore.shared
+        let previousBackground = store.canvasBackground
         store.canvasBackground = .graphite
+        defer { store.canvasBackground = previousBackground }  // don't clobber the persisted GUI preference
         store.prepareHeadlessScreenshot()
 
         let size = CGSize(width: 1760, height: 1040)

@@ -106,6 +106,21 @@ public enum Format {
         return "bus \(bus) · \(path)"
     }
 
+    /// The port number on the immediate parent = last nibble of the
+    /// locationID path (display only; same >15 caveat as locationPath).
+    public static func lastPort(locationID: Int64) -> Int64? {
+        let loc = UInt32(truncatingIfNeeded: locationID)
+        var shift = 20
+        var last: UInt32 = 0
+        while shift >= 0 {
+            let nibble = (loc >> UInt32(shift)) & 0xF
+            if nibble == 0 { break }
+            last = nibble
+            shift -= 4
+        }
+        return last > 0 ? Int64(last) : nil
+    }
+
     public static func hex(_ v: Int64, width: Int = 0) -> String {
         let s = String(UInt64(bitPattern: v), radix: 16, uppercase: true)
         let padded = width > s.count ? String(repeating: "0", count: width - s.count) + s : s

@@ -201,7 +201,7 @@ enum GraphImageExporter {
         var fileExtension: String { self == .png ? "png" : "jpg" }
     }
 
-    static func export(store: AppStore, as format: ImageFormat) {
+    static func renderData(store: AppStore, format: ImageFormat) -> Data? {
         let layout = TreeLayout(
             systemRoot: store.systemDisplayNode,
             usbRoots: store.usbDisplayRoots,
@@ -212,20 +212,33 @@ enum GraphImageExporter {
         )
         let content = GraphCanvas(store: store, layout: layout)
             .environment(store)
-
         let renderer = ImageRenderer(content: content)
         renderer.scale = 2.0
-        guard let cgImage = renderer.cgImage else {
-            store.appendEvent(EventRow(kind: .info, title: "Graph export failed", detail: "renderer produced no image"))
-            return
-        }
+        guard let cgImage = renderer.cgImage else { return nil }
         let rep = NSBitmapImageRep(cgImage: cgImage)
-        let data: Data? = switch format {
+        return switch format {
         case .png: rep.representation(using: .png, properties: [:])
         case .jpeg: rep.representation(using: .jpeg, properties: [.compressionFactor: 0.9])
         }
-        guard let data else {
-            store.appendEvent(EventRow(kind: .info, title: "Graph export failed", detail: "could not encode \(format.rawValue)"))
+    }
+
+    /// Headless variant: graph canvas to an explicit path.
+    @discardableResult
+    static func writePNG(store: AppStore, to url: URL) -> Bool {
+        guard let data = renderData(store: store, format: .png) else { return false }
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    static func export(store: AppStore, as format: ImageFormat) {
+        guard let data = renderData(store: store, format: format) else {
+            store.appendEvent(EventRow(kind: .info, title: "Graph export failed", detail: "renderer produced no image"))
             return
         }
         let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
@@ -511,6 +524,13 @@ private struct NodeCard: View {
                 if isGhost {
                     CapsuleTag(text: "removed", color: .red)
                 } else {
+                    if let diff = store.baselineDiff {
+                        if diff.addedIDs.contains(node.id) {
+                            CapsuleTag(text: "NEW", color: .green)
+                        } else if diff.changed.contains(where: { $0.id == node.id }) {
+                            CapsuleTag(text: "CHANGED", color: .yellow)
+                        }
+                    }
                     if let nodeIssues = store.issues.byNode[node.id], !nodeIssues.isEmpty {
                         CapsuleTag(
                             text: "⚠︎ \(nodeIssues.count)",
@@ -522,6 +542,13 @@ private struct NodeCard: View {
                     }
                     if store.bandwidthOverlay, let share = store.allocatedShare(of: node) {
                         CapsuleTag(text: "alloc \(Int(share * 100))%", color: .teal)
+                    }
+                    if let total = node.properties["Portree Ports Total"]?.intValue, total > 0 {
+                        let free = node.properties["Portree Ports Free"]?.intValue ?? 0
+                        CapsuleTag(
+                            text: "\(total - free)/\(total) ports",
+                            color: free == 0 ? .orange : .secondary
+                        )
                     }
                     if let power = subtreePowerMA {
                         CapsuleTag(

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import PortreeCore
 
 /// The single MainActor owner of all mutable UI state. The IOKit queue hands
@@ -26,26 +27,74 @@ final class AppStore {
     private(set) var reenumeratedIDs: Set<UInt64> = []
     private var ghostNodes: [(parentID: UInt64, node: DeviceNode)] = []
 
-    // MARK: UI state
+    // MARK: UI state (viewport-ish state persists across launches)
     var selection: UInt64?
     var collapsed: Set<UInt64> = []
-    var searchText = ""
-    var inspectorShown = true
-    var drawerShown = true
+    var searchText = "" {
+        didSet { searchCursor = 0 }
+    }
+    var inspectorShown = true { didSet { persist(inspectorShown, "view.inspector") } }
+    var drawerShown = true { didSet { persist(drawerShown, "view.drawer") } }
     var logPaused = false
-    var zoom: CGFloat = 1.0
+    var zoom: CGFloat = 1.0 { didSet { persist(Double(zoom), "view.zoom") } }
     var pendingScrollTarget: UInt64?
     var toolboxShown = false
     /// Persistent legend overlay in the graph corner (palette button toggles).
-    var legendShown = true
-    /// Bandwidth overlay (allocated share + live rates) — OFF by default.
+    var legendShown = true { didSet { persist(legendShown, "view.legend") } }
+    /// Bandwidth overlay (allocated share + live rates) — OFF by default,
+    /// deliberately not persisted.
     var bandwidthOverlay = false
-    var orientation: LayoutOrientation = .leftToRight
-    var canvasBackground: CanvasBackground = .system
+    var orientation: LayoutOrientation = .leftToRight {
+        didSet { persist(orientation.rawValue, "view.orientation") }
+    }
+    var canvasBackground: CanvasBackground = .system {
+        didSet { persist(canvasBackground.rawValue, "view.background") }
+    }
     /// Graph pan offset in viewport points (content is scaled by `zoom`).
-    var panOffset: CGSize = CGSize(width: 24, height: 24)
+    var panOffset: CGSize = CGSize(width: 24, height: 24) {
+        didSet {
+            persist(Double(panOffset.width), "view.panX")
+            persist(Double(panOffset.height), "view.panY")
+        }
+    }
     /// Last known graph viewport, for fit/zoom-around-center math.
     var lastViewport: CGSize = .zero
+
+    private var restoringState = false
+    private var searchCursor = 0
+
+    private init() {
+        restoreViewState()
+    }
+
+    private func persist(_ value: Any, _ key: String) {
+        guard !restoringState else { return }
+        UserDefaults.standard.set(value, forKey: "portree.\(key)")
+    }
+
+    private func restoreViewState() {
+        restoringState = true
+        defer { restoringState = false }
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: "portree.view.zoom") != nil {
+            zoom = CGFloat(defaults.double(forKey: "portree.view.zoom"))
+            panOffset = CGSize(
+                width: defaults.double(forKey: "portree.view.panX"),
+                height: defaults.double(forKey: "portree.view.panY")
+            )
+            inspectorShown = defaults.object(forKey: "portree.view.inspector") as? Bool ?? true
+            drawerShown = defaults.object(forKey: "portree.view.drawer") as? Bool ?? true
+            legendShown = defaults.object(forKey: "portree.view.legend") as? Bool ?? true
+        }
+        if let raw = defaults.string(forKey: "portree.view.orientation"),
+           let restored = LayoutOrientation(rawValue: raw) {
+            orientation = restored
+        }
+        if let raw = defaults.string(forKey: "portree.view.background"),
+           let restored = CanvasBackground(rawValue: raw) {
+            canvasBackground = restored
+        }
+    }
 
     // MARK: Record mode (live throughput; real counters only)
     private(set) var isRecording = false
@@ -140,6 +189,7 @@ final class AppStore {
         }
 
         issues = Doctor.diagnose(snapshot: new)
+        recomputeBaselineDiff()
 
         if selection == nil {
             // Defer: assigning selection inside the same transaction as the
@@ -464,6 +514,77 @@ final class AppStore {
             }
         }
         return (matches, visible)
+    }
+
+    // MARK: Baseline diff (capture/load a frozen state, compare against live)
+
+    private(set) var baseline: Snapshot?
+    private(set) var baselineDiff: BaselineDiff?
+
+    func captureBaseline() {
+        guard let snapshot else { return }
+        baseline = snapshot
+        recomputeBaselineDiff()
+        appendEvent(EventRow(kind: .info, title: "Baseline captured", detail: "\(snapshot.deviceCount) devices frozen for comparison"))
+    }
+
+    func clearBaseline() {
+        baseline = nil
+        baselineDiff = nil
+    }
+
+    func saveBaseline() {
+        guard let snapshot else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "portree-baseline.json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try Exporters.json(snapshot).write(to: url)
+            appendEvent(EventRow(kind: .export, title: "Baseline saved", detail: url.path))
+        } catch {
+            appendEvent(EventRow(kind: .info, title: "Baseline save failed", detail: "\(error)"))
+        }
+    }
+
+    func loadBaseline() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            baseline = try decoder.decode(Snapshot.self, from: Data(contentsOf: url))
+            recomputeBaselineDiff()
+            appendEvent(EventRow(
+                kind: .info,
+                title: "Baseline loaded",
+                detail: "\(url.lastPathComponent) · \(baseline?.deviceCount ?? 0) devices"
+            ))
+        } catch {
+            appendEvent(EventRow(kind: .info, title: "Baseline load failed", detail: "\(error)"))
+        }
+    }
+
+    func recomputeBaselineDiff() {
+        guard let baseline, let snapshot else {
+            baselineDiff = nil
+            return
+        }
+        baselineDiff = BaselineDiff.compare(baseline: baseline, current: snapshot)
+    }
+
+    /// Matches in stable (name) order for ⌘G cycling.
+    var searchOrderedHits: [UInt64] {
+        guard let result = searchResult else { return [] }
+        return result.matches.sorted { (allNodes[$0]?.name ?? "") < (allNodes[$1]?.name ?? "") }
+    }
+
+    func nextSearchHit() {
+        let hits = searchOrderedHits
+        guard !hits.isEmpty else { return }
+        jump(to: hits[searchCursor % hits.count])
+        searchCursor += 1
     }
 
     // MARK: Helpers

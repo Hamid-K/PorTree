@@ -102,11 +102,14 @@ Sequencing rationale: usefulness ships early (outline + inspector by M2, live by
 A 10-agent review (27 findings) confirmed six majors — **all fixed** (sampler baseline keying, bcdUSB capability honesty, ghost↔arrival re-enumeration collapse across snapshots, index refresh on ghost expiry, flap coalescing, plus pinch/menu-zoom polish). Remaining accepted gaps, in rough priority order:
 
 - USB↔TB receptacle **cross-link chips** (Socket ID ↔ Port-USB-C ↔ XHCI) and DP-tunnel monitor naming from EDID — data verified available, UI not wired
-- Cross-launch **replug history** (persisted per-identity snapshots + descriptor diffing); History tab is session-scoped today
+- Cross-launch **replug history** (persisted per-identity snapshots + descriptor diffing); History tab is session-scoped today — the baseline-diff feature covers the manual version of this
 - `Port-USB-C` interest notifications (cable/orientation changes that add no device) and speed-retrain/TB-link-change event rows
 - Twin-merge hardening for non-unique ContainerIDs; TT-contention should also read the merged USB2 personality's protocol
 - Ghosts render only for the top-most removed node of an unplugged subtree
 - JSONL rows persist with count 1 (flap ×N is in-memory only); `controller-statistics` live layer; receptacle naming via `UsbIOPort` instead of bus-byte heuristic
+- Per-port empty-port dots drawn in the graph (occupancy counts + free port numbers shipped 2026-10-08; the per-port visual is the remainder), physical left/right port mapping, nicknames/usb.ids, per-issue ignore persistence
+
+Closed since the review (2026-10-08): aggregate uplink oversubscription, No-Free-Ports, port occupancy + port-number labels, viewport/view-state persistence, search match counter + ⌘G, baseline snapshot diff (capture/load/save + NEW/CHANGED markers), combinable headless exports, CI nightly + release pipeline.
 
 ## 6. Open questions (decide before open-sourcing)
 

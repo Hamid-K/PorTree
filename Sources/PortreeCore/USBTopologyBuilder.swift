@@ -37,9 +37,16 @@ public enum USBTopologyBuilder {
     /// address failures, link errors) — merged into the downstream device's
     /// property bag under "Port …" keys so the Raw tab and Doctor both see
     /// them.
+    struct PortSummary {
+        var total: Int64 = 0
+        var free: Int64 = 0
+        var freeNumbers: [Int64] = []
+    }
+
     private static func collectPortStats(
         under entry: io_registry_entry_t,
         into stats: inout [UInt64: [String: PropertyValue]],
+        summary: inout PortSummary,
         depth: Int = 0
     ) {
         // Port objects sit at varying depths: controller → usb-drd*-port-*,
@@ -58,13 +65,24 @@ public enum USBTopologyBuilder {
                 }
                 if let limit = props["kUSBWakePortCurrentLimit"] { merged["Port kUSBWakePortCurrentLimit"] = limit }
                 if let linkErrors = props["link-error-count"] { merged["Port link-error-count"] = linkErrors }
+
+                var occupied = false
                 let downstream = Registry.children(of: child, plane: "IOService")
                 defer { downstream.forEach { IOObjectRelease($0) } }
                 for device in downstream where Registry.conforms(device, to: "IOUSBHostDevice") {
+                    occupied = true
                     stats[Registry.entryID(of: device), default: [:]].merge(merged) { a, _ in a }
                 }
+                // Occupancy: every port object counts once; free ports keep
+                // their number so "plug it into port N" is actionable.
+                summary.total += 1
+                if !occupied {
+                    summary.free += 1
+                    let number = pciLEInt(props["port"]) ?? pciLEInt(props["usb-port-number"]) ?? 0
+                    if number > 0 { summary.freeNumbers.append(number) }
+                }
             }
-            collectPortStats(under: child, into: &stats, depth: depth + 1)
+            collectPortStats(under: child, into: &stats, summary: &summary, depth: depth + 1)
         }
     }
 
@@ -98,7 +116,8 @@ public enum USBTopologyBuilder {
         let props = Registry.properties(of: entry)
         let className = Registry.className(of: entry)
         let registryName = Registry.name(of: entry)
-        collectPortStats(under: entry, into: &portStats)
+        var controllerPorts = PortSummary()
+        collectPortStats(under: entry, into: &portStats, summary: &controllerPorts)
         var children: [DeviceNode] = []
         for child in Registry.children(of: entry, plane: "IOUSB") {
             defer { IOObjectRelease(child) }
@@ -136,11 +155,21 @@ public enum USBTopologyBuilder {
         _ entry: io_registry_entry_t,
         portStats: inout [UInt64: [String: PropertyValue]]
     ) -> DeviceNode {
-        let props = Registry.properties(of: entry)
+        var props = Registry.properties(of: entry)
         let registryName = Registry.name(of: entry)
         let interfaces = collectInterfaces(of: entry)
         if props["bDeviceClass"]?.intValue == 9 {
-            collectPortStats(under: entry, into: &portStats)
+            var hubPorts = PortSummary()
+            collectPortStats(under: entry, into: &portStats, summary: &hubPorts)
+            if hubPorts.total > 0 {
+                props["Portree Ports Total"] = .int(hubPorts.total)
+                props["Portree Ports Free"] = .int(hubPorts.free)
+                if !hubPorts.freeNumbers.isEmpty {
+                    props["Portree Free Ports"] = .string(
+                        hubPorts.freeNumbers.sorted().map { "\($0)" }.joined(separator: ", ")
+                    )
+                }
+            }
         }
         var children: [DeviceNode] = []
         for child in Registry.children(of: entry, plane: "IOUSB") {
@@ -149,7 +178,11 @@ public enum USBTopologyBuilder {
         }
 
         let linkSpeed = props["UsbLinkSpeed"]?.intValue ?? 0
-        let (name, subtitle) = displayName(props: props, registryName: registryName)
+        var (name, subtitle) = displayName(props: props, registryName: registryName)
+        // Port number on the parent = last nibble of the locationID path.
+        if let location = props["locationID"]?.intValue, let port = Format.lastPort(locationID: location) {
+            subtitle = subtitle.isEmpty ? "port \(port)" : "port \(port) · \(subtitle)"
+        }
         return DeviceNode(
             id: Registry.entryID(of: entry),
             kind: .usbDevice,
@@ -311,6 +344,17 @@ public enum USBTopologyBuilder {
             result.append(merged)
         }
         return result
+    }
+
+    /// 4-byte little-endian Data (how port objects store "port" /
+    /// "usb-port-number") or a plain number.
+    private static func pciLEInt(_ value: PropertyValue?) -> Int64? {
+        switch value {
+        case .int(let i): return i
+        case .data(let d) where !d.isEmpty:
+            return d.prefix(8).enumerated().reduce(Int64(0)) { $0 | Int64($1.element) << (8 * $1.offset) }
+        default: return nil
+        }
     }
 
     private static func isSpeedSplit(_ a: DeviceNode, _ b: DeviceNode) -> Bool {

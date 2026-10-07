@@ -1,0 +1,65 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # GitHub's macos-15 runners are Apple Silicon (arm64) with full Xcode —
+    # the Makefile detects that and skips the CLT-only SDK pin automatically.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: make release
+
+      - name: Test
+        run: make test
+
+      - name: Package Portree.app
+        run: |
+          make icon
+          make app
+          SHORT_SHA="${GITHUB_SHA::7}"
+          ditto -c -k --keepParent dist/Portree.app "dist/PorTree-${GITHUB_REF_NAME//\//-}-${SHORT_SHA}.zip"
+          ls -la dist/
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PorTree-${{ github.sha }}
+          path: dist/*.zip
+          retention-days: 14
+
+      # Rolling nightly: every push to main re-points the `nightly` tag and
+      # replaces the prerelease asset.
+      - name: Update nightly prerelease
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -f nightly
+          git push -f origin nightly
+          gh release view nightly >/dev/null 2>&1 || \
+            gh release create nightly --prerelease --title "Nightly" \
+              --notes "Rolling build of the latest main. Ad-hoc signed — right-click → Open on first launch."
+          cp dist/PorTree-*.zip dist/PorTree-nightly.zip
+          gh release upload nightly dist/PorTree-nightly.zip --clobber
+          gh release edit nightly --notes "Rolling build of main @ ${GITHUB_SHA::7} ($(date -u +%Y-%m-%dT%H:%MZ)). Ad-hoc signed — right-click → Open on first launch."
+
+      # Versioned releases: pushing a v* tag publishes a real release.
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/PorTree-*.zip \
+            --title "PorTree $GITHUB_REF_NAME" --generate-notes \
+            --notes-start-tag "$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')" || \
+          gh release upload "$GITHUB_REF_NAME" dist/PorTree-*.zip --clobber

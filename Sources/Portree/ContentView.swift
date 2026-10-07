@@ -4,6 +4,7 @@ import PortreeCore
 struct ContentView: View {
     @Environment(AppStore.self) private var store
     @State private var diagnosticsShown = false
+    @State private var diffShown = false
 
     var body: some View {
         @Bindable var store = store
@@ -85,6 +86,25 @@ struct ContentView: View {
                 .popover(isPresented: $diagnosticsShown, arrowEdge: .bottom) { DiagnosticsView() }
 
                 Button {
+                    diffShown.toggle()
+                } label: {
+                    Image(systemName: "plus.slash.minus")
+                        .overlay(alignment: .topTrailing) {
+                            if let diff = store.baselineDiff, diff.totalCount > 0 {
+                                Text("\(diff.totalCount)")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 3.5)
+                                    .padding(.vertical, 0.5)
+                                    .background(Color.green, in: Capsule())
+                                    .offset(x: 8, y: -7)
+                            }
+                        }
+                }
+                .help("Baseline diff — freeze or load a state, compare against live")
+                .popover(isPresented: $diffShown, arrowEdge: .bottom) { DiffPanelView() }
+
+                Button {
                     store.toolboxShown = true
                 } label: { Image(systemName: "wrench.and.screwdriver") }
                     .help("Debugging toolbox (⌘T)")
@@ -122,6 +142,10 @@ struct ContentView: View {
 
     private var subtitle: String {
         guard let snapshot = store.snapshot else { return "reading IORegistry…" }
+        if let result = store.searchResult {
+            let count = result.matches.count
+            return "\(count) match\(count == 1 ? "" : "es") for “\(store.searchText)” · ⌘G cycles"
+        }
         let tbCount = snapshot.tbRoots.count
         return "\(snapshot.deviceCount) devices · \(tbCount) TB/USB4 domain\(tbCount == 1 ? "" : "s")"
             + (store.lastRefresh.map { " · refreshed \(Theme.timestamp($0))" } ?? "")

@@ -28,26 +28,41 @@ struct PortreeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
-        // Headless mode: `portree --dump` prints the full snapshot as JSON and
-        // exits — used for scripting and for verifying the data layer without
-        // a window.
-        // Headless press-shot: `portree --export-screenshot <path>` renders
-        // the composed app view (live data) to a PNG and exits.
-        if let flagIndex = CommandLine.arguments.firstIndex(of: "--export-screenshot"),
-           CommandLine.arguments.count > flagIndex + 1 {
-            let url = URL(fileURLWithPath: CommandLine.arguments[flagIndex + 1])
-            let ok = ScreenshotComposer.export(to: url)
-            FileHandle.standardError.write(Data((ok ? "wrote \(url.path)\n" : "screenshot export failed\n").utf8))
-            exit(ok ? 0 : 1)
+        // Headless mode — flags combine, one registry capture serves all:
+        //   portree --dump                          JSON snapshot on stdout
+        //   portree --export-graph graph.png        graph canvas only
+        //   portree --export-screenshot shot.png    composed full-app view
+        let args = CommandLine.arguments
+        func path(after flag: String) -> String? {
+            guard let index = args.firstIndex(of: flag), args.count > index + 1 else { return nil }
+            return args[index + 1]
         }
-
-        if CommandLine.arguments.contains("--dump") {
-            let snapshot = Snapshot.capture()
-            if let data = try? Exporters.json(snapshot) {
-                FileHandle.standardOutput.write(data)
-                FileHandle.standardOutput.write(Data("\n".utf8))
+        let wantsDump = args.contains("--dump")
+        let graphPath = path(after: "--export-graph")
+        let shotPath = path(after: "--export-screenshot")
+        if wantsDump || graphPath != nil || shotPath != nil {
+            let store = AppStore.shared
+            store.prepareHeadlessScreenshot()
+            var failed = false
+            if wantsDump {
+                if let snapshot = store.snapshot, let data = try? Exporters.json(snapshot) {
+                    FileHandle.standardOutput.write(data)
+                    FileHandle.standardOutput.write(Data("\n".utf8))
+                } else {
+                    failed = true
+                }
             }
-            exit(0)
+            if let graphPath {
+                let ok = GraphImageExporter.writePNG(store: store, to: URL(fileURLWithPath: graphPath))
+                FileHandle.standardError.write(Data((ok ? "wrote \(graphPath)\n" : "graph export failed\n").utf8))
+                failed = failed || !ok
+            }
+            if let shotPath {
+                let ok = ScreenshotComposer.export(to: URL(fileURLWithPath: shotPath))
+                FileHandle.standardError.write(Data((ok ? "wrote \(shotPath)\n" : "screenshot export failed\n").utf8))
+                failed = failed || !ok
+            }
+            exit(failed ? 1 : 0)
         }
     }
 
@@ -70,6 +85,8 @@ struct PortreeApp: App {
                     .keyboardShortcut("t")
                 Button("Record Throughput") { AppStore.shared.toggleRecording() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
+                Button("Find Next Match") { AppStore.shared.nextSearchHit() }
+                    .keyboardShortcut("g")
                 Divider()
                 Button("Expand All") { AppStore.shared.expandAll() }
                     .keyboardShortcut(.rightArrow, modifiers: [.command, .option])

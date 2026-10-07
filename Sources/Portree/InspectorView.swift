@@ -131,6 +131,11 @@ private struct DecodedTab: View {
                 if let location = node.locationID {
                     row("Location", "\(Format.locationPath(location))  (\(Format.hex(location, width: 8)))")
                 }
+                if let total = node.properties["Portree Ports Total"]?.intValue, total > 0 {
+                    let free = node.properties["Portree Ports Free"]?.intValue ?? 0
+                    let freeList = node.properties["Portree Free Ports"]?.stringValue.map { " · free: \($0)" } ?? ""
+                    row("Ports", "\(total - free) used / \(total)\(freeList)")
+                }
                 if let route = node.properties["Route String"]?.intValue {
                     row("Route string", Format.hex(route))
                 }

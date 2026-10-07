@@ -9,6 +9,7 @@ public enum Doctor {
         public enum Kind: String, Sendable {
             case throttled, speedCap, bottleneckHub, powerBudget, powerNearLimit
             case overcurrent, portErrors, deepChain, ttContention, tbDowntrain
+            case noFreePorts, bandwidthOversubscribed
         }
         public enum Severity: String, Sendable, Comparable {
             case info, warning, problem
@@ -96,6 +97,40 @@ public enum Doctor {
                             title: node.isHub ? "Hub negotiated below capability" : "Below rated speed",
                             detail: "\(node.name) reports \(Format.bcd(node.properties["bcdUSB"]?.intValue ?? 0)) capability (\(Format.speedLabel(bps: capability))) but negotiated \(node.speedLabel). Cable, port, or device-side limit\(node.isHub ? " — a bottleneck for devices behind it" : "")."
                         ))
+                    }
+                }
+
+                if node.isHub {
+                    // Occupancy: all ports taken.
+                    if let total = node.properties["Portree Ports Total"]?.intValue, total > 0,
+                       node.properties["Portree Ports Free"]?.intValue == 0 {
+                        issues.append(Issue(
+                            kind: .noFreePorts,
+                            severity: .info,
+                            nodeID: node.id,
+                            title: "No free ports",
+                            detail: "All \(total) ports on this hub are occupied."
+                        ))
+                    }
+                    // Aggregate oversubscription: the collective worst case,
+                    // complementing (not replacing) per-device throttling.
+                    // Computed from negotiated capabilities, never live
+                    // traffic — record mode shows actual usage.
+                    if node.linkSpeedBps > 0 {
+                        let demand = node.flattened().dropFirst()
+                            .filter { !$0.isHub && $0.kind == .usbDevice }
+                            .map(\.linkSpeedBps)
+                            .reduce(0, +)
+                        if demand > node.linkSpeedBps {
+                            let ratio = Double(demand) / Double(node.linkSpeedBps)
+                            issues.append(Issue(
+                                kind: .bandwidthOversubscribed,
+                                severity: ratio > 2 ? .warning : .info,
+                                nodeID: node.id,
+                                title: "Uplink bandwidth oversubscribed",
+                                detail: "Devices behind this hub can collectively demand \(Format.speedLabel(bps: demand)) over a \(node.speedLabel) uplink (\(String(format: "%.1f", ratio))×). Theoretical worst case from negotiated link speeds — they only contend when active together; record mode shows live usage."
+                            ))
+                        }
                     }
                 }
 
