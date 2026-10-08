@@ -108,16 +108,20 @@ struct TreeLayout {
         var mainByID: [UInt64: CGFloat] = [:]
         var crossByID: [UInt64: CGFloat] = [:]
 
+        // Horizontal cross-coordinates are CENTERS, not tops: a tag-expanded
+        // card must grow symmetrically around its connection line and stay
+        // center-aligned with its chain — neighbors reflow around its full
+        // height. (Top-down keeps tops: widths are constant there.)
         func place(_ node: DeviceNode, depth: Int) {
             let main = horizontal
                 ? 24 + CGFloat(depth) * (Self.nodeWidth + Self.gapMain)
                 : (mainOffset[depth] ?? 24)
-            let cross: CGFloat = horizontal ? h(node) : Self.nodeWidth
+            let extent: CGFloat = horizontal ? h(node) : Self.nodeWidth
             let open = !node.children.isEmpty && !collapsed.contains(node.id)
             if !open {
                 mainByID[node.id] = main
-                crossByID[node.id] = cursorCross
-                cursorCross += cross + Self.gapCross
+                crossByID[node.id] = horizontal ? cursorCross + extent / 2 : cursorCross
+                cursorCross += extent + Self.gapCross
             } else {
                 let start = cursorCross
                 for child in node.children {
@@ -127,8 +131,14 @@ struct TreeLayout {
                 let first = crossByID[node.children.first!.id]!
                 let last = crossByID[node.children.last!.id]!
                 mainByID[node.id] = main
-                crossByID[node.id] = max(start, (first + last) / 2)
-                cursorCross = max(cursorCross, crossByID[node.id]! + cross + Self.gapCross)
+                if horizontal {
+                    let center = max(start + extent / 2, (first + last) / 2)
+                    crossByID[node.id] = center
+                    cursorCross = max(cursorCross, center + extent / 2 + Self.gapCross)
+                } else {
+                    crossByID[node.id] = max(start, (first + last) / 2)
+                    cursorCross = max(cursorCross, crossByID[node.id]! + extent + Self.gapCross)
+                }
             }
             heights[node.id] = h(node)
             visibleNodes.append(node)
@@ -139,7 +149,7 @@ struct TreeLayout {
         for (id, main) in mainByID {
             let cross = crossByID[id]!
             positions[id] = horizontal
-                ? CGPoint(x: main, y: cross)
+                ? CGPoint(x: main, y: cross - height(of: id) / 2)
                 : CGPoint(x: cross, y: main)
             maxMainExtent = max(maxMainExtent, main + (horizontal ? Self.nodeWidth : height(of: id)))
         }
@@ -147,19 +157,19 @@ struct TreeLayout {
             ? CGSize(width: maxMainExtent + 48, height: cursorCross + 24)
             : CGSize(width: cursorCross + 24, height: maxMainExtent + 48)
 
-        // Horizontal anchors sit at the HEADER line (base-height center),
-        // not the card's center: a tag-expanded card grows downward, and
-        // center-anchoring would bend every edge into an S around it.
+        // Cards are center-aligned on their connection line (placement is
+        // center-based in horizontal), so anchors at height/2 stay straight
+        // through tag expansion.
         func anchorOut(_ id: UInt64) -> CGPoint {
             let point = positions[id]!
             return horizontal
-                ? CGPoint(x: point.x + Self.nodeWidth, y: point.y + min(height(of: id), Self.nodeHeight) / 2)
+                ? CGPoint(x: point.x + Self.nodeWidth, y: point.y + height(of: id) / 2)
                 : CGPoint(x: point.x + Self.nodeWidth / 2, y: point.y + height(of: id))
         }
         func anchorIn(_ id: UInt64) -> CGPoint {
             let point = positions[id]!
             return horizontal
-                ? CGPoint(x: point.x, y: point.y + min(height(of: id), Self.nodeHeight) / 2)
+                ? CGPoint(x: point.x, y: point.y + height(of: id) / 2)
                 : CGPoint(x: point.x + Self.nodeWidth / 2, y: point.y)
         }
 
