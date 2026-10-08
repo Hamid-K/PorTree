@@ -360,6 +360,20 @@ struct GraphCanvas: View {
             }
         }
         .frame(width: layout.size.width, height: layout.size.height)
+        .overlay(alignment: .topTrailing) {
+            // Privacy exports must say so IN the image — a reader has no
+            // other way to know the serials/UIDs they see were randomized.
+            if store.snapshot?.redacted == true {
+                Label("Identifiers randomized — privacy export", systemImage: "eye.slash.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .overlay(Capsule().stroke(.orange.opacity(0.6), lineWidth: 1))
+                    .padding(12)
+            }
+        }
     }
 }
 
