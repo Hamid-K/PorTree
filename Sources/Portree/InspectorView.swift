@@ -158,6 +158,28 @@ private struct DecodedTab: View {
                 }
                 row("Tunneled", node.isTunneled ? "Yes (USB4/TB tunnel)" : (node.kind == .tbSwitch ? "native fabric" : "No"))
             }
+            if let link = store.portLink(for: node) {
+                group("Cable — \(link.portType) \(link.portNumber)") {
+                    if let marker = link.eMarker {
+                        if let type = marker.productTypeDescription { row("eMarker", type) }
+                        if let vid = marker.vendorID {
+                            row("Maker", "\(Format.hex(vid, width: 4))\(marker.productID.map { ":\(Format.hex($0, width: 4))" } ?? "")")
+                        }
+                        if let speed = marker.ratedSpeed { row("Rated speed", speed) }
+                        if let current = marker.ratedCurrent {
+                            row("Rated current", current + (marker.maxVBusVoltage.map { " · up to \($0)" } ?? ""))
+                        }
+                        if let latency = marker.latencyLabel { row("Latency", latency) }
+                        if let termination = marker.termination { row("Termination", termination) }
+                        if let construction = marker.construction { row("Build", construction) }
+                    } else {
+                        row("eMarker", "none — legacy/unmarked cable")
+                    }
+                    if let contract = link.powerContract {
+                        row("Power in", contract.label)
+                    }
+                }
+            }
             if let displayMode = store.displayModes[node.id] {
                 group("Display") {
                     row("Mode", displayMode)

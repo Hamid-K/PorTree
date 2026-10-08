@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import AVFoundation
 import UniformTypeIdentifiers
+import notify
 import PortreeCore
 
 /// The single MainActor owner of all mutable UI state. The IOKit queue hands
@@ -52,6 +53,157 @@ final class AppStore {
     /// Transient spotlight: everything except this node fades out so a
     /// display picked in the sidebar is easy to spot in the graph.
     private(set) var focusedNodeID: UInt64?
+
+    /// Floating link card: clicking an edge opens a popover with that
+    /// connection's facts, anchored in CONTENT space so it pans/zooms with
+    /// the graph. `childID` identifies the edge (every edge is its child).
+    struct LinkSelection: Equatable {
+        let childID: UInt64
+    }
+    var linkPopover: LinkSelection?
+
+    /// Memoized layout: pan/zoom/hover change every frame but never the
+    /// geometry, so the tree is rebuilt only when an input that actually
+    /// shapes it changes.
+    @ObservationIgnored private var layoutCacheKey: Int = 0
+    @ObservationIgnored private var layoutCache: TreeLayout?
+
+    func currentLayout() -> TreeLayout {
+        var hasher = Hasher()
+        hasher.combine(snapshot?.takenAt)
+        hasher.combine(collapsed)
+        hasher.combine(orientation)
+        hasher.combine(expandedTags)
+        hasher.combine(fontScale)
+        hasher.combine(ghostIDs)
+        hasher.combine(sinkNodes.map(\.node.id))
+        let key = hasher.finalize()
+        if let cached = layoutCache, key == layoutCacheKey { return cached }
+        let layout = TreeLayout(
+            systemRoot: systemDisplayNode,
+            usbRoots: usbDisplayRoots,
+            tbRoots: tbDisplayRoots,
+            pciRoots: pciDisplayRoots,
+            collapsed: collapsed,
+            orientation: orientation,
+            nodeHeights: TagMetrics.nodeHeights(store: self)
+        )
+        layoutCache = layout
+        layoutCacheKey = key
+        return layout
+    }
+
+    // MARK: Cables & power (per-receptacle port-manager facts)
+
+    /// The receptacle whose cable lands on this FIRST-HOP node (CIO UID ==
+    /// the first TB/USB4 router's UID). Deeper hops return nil — their
+    /// cables' eMarkers are not visible to the host's port manager.
+    func portLink(for node: DeviceNode) -> PortLink? {
+        guard node.kind == .tbSwitch,
+              let uid = node.properties["UID"]?.intValue else { return nil }
+        let unsigned = UInt64(bitPattern: uid)
+        return snapshot?.portLinks.first { $0.cioUID == unsigned }
+    }
+
+    struct CableEntry: Identifiable, Hashable {
+        let id: String
+        let portLabel: String
+        let detail: String
+        let nodeID: UInt64?
+        let active: Bool
+        let powered: Bool
+    }
+
+    var cableEntries: [CableEntry] {
+        (snapshot?.portLinks ?? []).map { link in
+            var parts: [String] = []
+            if let marker = link.eMarker {
+                if let type = marker.productTypeDescription { parts.append(type.lowercased()) }
+                if let speed = marker.ratedSpeed { parts.append(speed) }
+                if let current = marker.ratedCurrent { parts.append(current) }
+                if let construction = marker.construction { parts.append(construction) }
+            } else if link.active {
+                parts.append("no eMarker — legacy/unmarked cable")
+            }
+            if let contract = link.powerContract {
+                parts.append("⚡ \(Format.milli(contract.voltageMV)) V in")
+            }
+            let nodeID = link.cioUID.flatMap { uid in
+                allNodes.values.first {
+                    $0.kind == .tbSwitch && $0.properties["UID"]?.intValue.map { UInt64(bitPattern: $0) } == uid
+                }?.id
+            }
+            return CableEntry(
+                id: link.id,
+                portLabel: "\(link.portType) \(link.portNumber)",
+                detail: link.active ? parts.joined(separator: " · ") : "empty",
+                nodeID: nodeID,
+                active: link.active,
+                powered: link.powerContract != nil
+            )
+        }
+    }
+
+    struct PowerRow: Identifiable, Hashable {
+        let id: String
+        let icon: String
+        let title: String
+        let detail: String
+        let nodeID: UInt64?
+        let negotiated: Bool
+    }
+
+    var powerRows: [PowerRow] {
+        guard let power = snapshot?.power else { return [] }
+        var rows: [PowerRow] = []
+        if power.externalConnected {
+            let poweredPort = snapshot?.portLinks.first { $0.powerContract != nil }
+            let sourceNode = poweredPort.flatMap { port in
+                port.cioUID.flatMap { uid in
+                    allNodes.values.first {
+                        $0.kind == .tbSwitch && $0.properties["UID"]?.intValue.map { UInt64(bitPattern: $0) } == uid
+                    }?.id
+                }
+            }
+            var title = power.adapterDescription ?? "power source"
+            if let watts = power.adapterWatts { title += " — \(watts) W" }
+            var details: [String] = []
+            if let port = poweredPort { details.append("\(port.portType) \(port.portNumber)") }
+            if let contract = poweredPort?.powerContract {
+                details.append("contract \(contract.label)")
+            } else if let v = power.adapterVoltageMV, let a = power.adapterCurrentMA {
+                details.append("contract \(Format.milli(v)) V · \(Format.milli(a)) A")
+            }
+            rows.append(PowerRow(
+                id: "source", icon: "bolt.fill", title: title,
+                detail: details.joined(separator: " · "),
+                nodeID: sourceNode, negotiated: false
+            ))
+            if let inMW = power.systemPowerInMW {
+                var detail = "live measured input"
+                if let load = power.systemLoadMW { detail += " · system load \(String(format: "%.1f", Double(load) / 1000)) W" }
+                rows.append(PowerRow(
+                    id: "live", icon: "gauge.with.dots.needle.33percent",
+                    title: "drawing \(String(format: "%.1f", Double(inMW) / 1000)) W now",
+                    detail: detail, nodeID: nil, negotiated: false
+                ))
+            }
+            for (index, pdo) in power.hvcMenu.enumerated() {
+                rows.append(PowerRow(
+                    id: "pdo\(index)", icon: "list.bullet",
+                    title: pdo.label,
+                    detail: power.hvcIndex == Int64(index) ? "negotiated" : "offered",
+                    nodeID: nil, negotiated: power.hvcIndex == Int64(index)
+                ))
+            }
+        } else {
+            rows.append(PowerRow(
+                id: "battery", icon: "battery.75percent", title: "On battery",
+                detail: "no external power source", nodeID: nil, negotiated: false
+            ))
+        }
+        return rows
+    }
 
     func focusNode(_ id: UInt64) {
         selection = id
@@ -258,6 +410,13 @@ final class AppStore {
         ) { _ in
             Task { @MainActor in AppStore.shared.scheduleScreenRescan() }
         }
+
+        // Power-source changes (a pure PD charger or MagSafe raises no
+        // USB/TB/display event at all) — kIOPSNotifyPowerSource via notify(3).
+        var token: Int32 = 0
+        notify_register_dispatch("com.apple.system.powersources.source", &token, DispatchQueue.main) { _ in
+            Task { @MainActor in AppStore.shared.scheduleScreenRescan() }
+        }
     }
 
     private var screenRescanPending = false
@@ -356,6 +515,11 @@ final class AppStore {
         recomputeBaselineDiff()
         updateDisplayModes()
         updateCameraInfo()
+
+        // A link card for a connection that no longer exists closes itself.
+        if let popover = linkPopover, allNodes[popover.childID] == nil {
+            linkPopover = nil
+        }
 
         if selection == nil {
             // Defer: assigning selection inside the same transaction as the

@@ -116,6 +116,20 @@ struct OutlineView: View {
                     }
                 }
             }
+            if !store.cableEntries.isEmpty {
+                Section("Cables & Ports") {
+                    ForEach(store.cableEntries) { entry in
+                        CableEntryRow(entry: entry)
+                    }
+                }
+            }
+            if !store.powerRows.isEmpty {
+                Section("Power") {
+                    ForEach(store.powerRows) { row in
+                        PowerEntryRow(row: row)
+                    }
+                }
+            }
             ForEach(DeviceCategory.typeOrder.filter { $0 != .display }, id: \.self) { category in
                 if let nodes = byCategory[category], !nodes.isEmpty {
                     Section(category.typeLabel) {
@@ -161,6 +175,75 @@ private struct DisplayEntryRow: View {
         }
         .buttonStyle(.plain)
         .help(entry.nodeID != nil ? "Click to spotlight in the graph" : entry.detail)
+    }
+}
+
+/// One physical receptacle: the cable's eMarker facts (or "empty"), with the
+/// graph spotlight landing on the first-hop device the cable feeds.
+private struct CableEntryRow: View {
+    @Environment(AppStore.self) private var store
+    let entry: AppStore.CableEntry
+
+    var body: some View {
+        Button {
+            if let nodeID = entry.nodeID { store.focusNode(nodeID) }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: entry.powered ? "powercord.fill" : "cable.connector")
+                    .appFont(10.5)
+                    .foregroundStyle(entry.active ? (entry.powered ? .orange : .indigo) : .secondary)
+                    .frame(width: 18, height: 18)
+                    .background(
+                        (entry.active ? (entry.powered ? Color.orange : Color.indigo) : Color.secondary).opacity(0.13),
+                        in: RoundedRectangle(cornerRadius: 4)
+                    )
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(entry.portLabel).appFont(12).lineLimit(1)
+                    Text(entry.detail)
+                        .appFont(9.5)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 2)
+            }
+            .opacity(entry.active ? 1 : 0.55)
+        }
+        .buttonStyle(.plain)
+        .help(entry.nodeID != nil ? "Click to spotlight the first-hop device" : entry.detail)
+    }
+}
+
+/// One fact about the Mac's power input (source, live draw, PDO menu).
+private struct PowerEntryRow: View {
+    @Environment(AppStore.self) private var store
+    let row: AppStore.PowerRow
+
+    var body: some View {
+        Button {
+            if let nodeID = row.nodeID { store.focusNode(nodeID) }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: row.icon)
+                    .appFont(10.5)
+                    .foregroundStyle(row.negotiated || row.id == "source" ? .orange : .secondary)
+                    .frame(width: 18, height: 18)
+                    .background(Color.orange.opacity(row.negotiated || row.id == "source" ? 0.13 : 0.05), in: RoundedRectangle(cornerRadius: 4))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(row.title).appFont(12).lineLimit(1)
+                    if !row.detail.isEmpty {
+                        Text(row.detail)
+                            .appFont(9.5)
+                            .foregroundStyle(row.negotiated ? Color.orange : .secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 2)
+                if row.negotiated {
+                    Image(systemName: "checkmark.circle.fill").appFont(10).foregroundStyle(.orange)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 

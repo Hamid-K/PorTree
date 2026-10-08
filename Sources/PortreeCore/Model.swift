@@ -222,6 +222,10 @@ public struct Snapshot: Sendable, Codable {
     /// Physical monitors as the port-transport subsystem records them —
     /// captured here (on the IOKit queue) so the UI never touches IOKit.
     public let displaySinks: [DisplaySink]
+    /// Physical receptacles with cable eMarker + PD contract facts.
+    public let portLinks: [PortLink]
+    /// The Mac's power-input state (adapter contract, live input watts).
+    public let power: PowerInfo?
     public let takenAt: Date
 
     public init(
@@ -230,6 +234,8 @@ public struct Snapshot: Sendable, Codable {
         pciRoots: [DeviceNode] = [],
         systemNode: DeviceNode? = nil,
         displaySinks: [DisplaySink] = [],
+        portLinks: [PortLink] = [],
+        power: PowerInfo? = nil,
         takenAt: Date = Date()
     ) {
         self.usbRoots = usbRoots
@@ -237,6 +243,8 @@ public struct Snapshot: Sendable, Codable {
         self.pciRoots = pciRoots
         self.systemNode = systemNode
         self.displaySinks = displaySinks
+        self.portLinks = portLinks
+        self.power = power
         self.takenAt = takenAt
     }
 
@@ -249,6 +257,8 @@ public struct Snapshot: Sendable, Codable {
         pciRoots = try container.decodeIfPresent([DeviceNode].self, forKey: .pciRoots) ?? []
         systemNode = try container.decodeIfPresent(DeviceNode.self, forKey: .systemNode)
         displaySinks = try container.decodeIfPresent([DisplaySink].self, forKey: .displaySinks) ?? []
+        portLinks = try container.decodeIfPresent([PortLink].self, forKey: .portLinks) ?? []
+        power = try container.decodeIfPresent(PowerInfo.self, forKey: .power)
         takenAt = try container.decodeIfPresent(Date.self, forKey: .takenAt) ?? Date()
     }
 
@@ -309,7 +319,9 @@ public struct Snapshot: Sendable, Codable {
             tbRoots: tbRoots,
             pciRoots: PCITopologyBuilder.build(tbRoots: tbRoots),
             systemNode: system,
-            displaySinks: DisplaySinks.enumerate()
+            displaySinks: DisplaySinks.enumerate(),
+            portLinks: PortsReader.enumerate(),
+            power: PowerReader.read()
         )
     }
 

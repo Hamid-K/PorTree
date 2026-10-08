@@ -11,6 +11,53 @@ struct GraphView: View {
     @Environment(AppStore.self) private var store
     @State private var dragStart: CGSize?
     @State private var gestureZoom: CGFloat = 1.0
+    @State private var hoveredEdgeID: String?
+
+    // MARK: Edge hit-testing (content space, mirrors the elbow geometry)
+
+    private func contentPoint(_ p: CGPoint, zoom: CGFloat) -> CGPoint {
+        CGPoint(x: (p.x - store.panOffset.width) / zoom, y: (p.y - store.panOffset.height) / zoom)
+    }
+
+    private func nearestEdge(to p: CGPoint, in layout: TreeLayout, zoom: CGFloat) -> TreeLayout.Edge? {
+        let threshold = 12 / max(zoom, 0.4)
+        var best: (edge: TreeLayout.Edge, distance: CGFloat, endpoint: CGFloat)?
+        for edge in layout.edges {
+            let d = Self.elbowDistance(
+                from: edge.from, to: edge.to,
+                horizontal: layout.orientation == .leftToRight, point: p
+            )
+            guard d < threshold else { continue }
+            // Sibling edges share their trunk segments exactly — ties break
+            // toward the edge whose child endpoint is closest to the cursor.
+            let endpoint = hypot(p.x - edge.to.x, p.y - edge.to.y)
+            if best == nil
+                || d < best!.distance - 0.5
+                || (abs(d - best!.distance) <= 0.5 && endpoint < best!.endpoint) {
+                best = (edge, d, endpoint)
+            }
+        }
+        return best?.edge
+    }
+
+    private static func elbowDistance(from: CGPoint, to: CGPoint, horizontal: Bool, point: CGPoint) -> CGFloat {
+        let corners: [CGPoint] = horizontal
+            ? [from, CGPoint(x: (from.x + to.x) / 2, y: from.y), CGPoint(x: (from.x + to.x) / 2, y: to.y), to]
+            : [from, CGPoint(x: from.x, y: (from.y + to.y) / 2), CGPoint(x: to.x, y: (from.y + to.y) / 2), to]
+        var best = CGFloat.infinity
+        for i in 0..<(corners.count - 1) {
+            best = min(best, segmentDistance(point, corners[i], corners[i + 1]))
+        }
+        return best
+    }
+
+    private static func segmentDistance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let lengthSquared = dx * dx + dy * dy
+        guard lengthSquared > 0 else { return hypot(p.x - a.x, p.y - a.y) }
+        let t = max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared))
+        return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+    }
 
     @ViewBuilder
     private func graphContent(layout: TreeLayout, search: (matches: Set<UInt64>, visible: Set<UInt64>)?) -> some View {
@@ -41,15 +88,7 @@ struct GraphView: View {
     }
 
     var body: some View {
-        let layout = TreeLayout(
-            systemRoot: store.systemDisplayNode,
-            usbRoots: store.usbDisplayRoots,
-            tbRoots: store.tbDisplayRoots,
-            pciRoots: store.pciDisplayRoots,
-            collapsed: store.collapsed,
-            orientation: store.orientation,
-            nodeHeights: TagMetrics.nodeHeights(store: store)
-        )
+        let layout = store.currentLayout()
         let search = store.searchResult
 
         GeometryReader { geo in
@@ -78,7 +117,8 @@ struct GraphView: View {
                         time: timeline.date.timeIntervalSinceReferenceDate,
                         zoom: store.zoom * gestureZoom,
                         background: store.canvasBackground,
-                        canvasOffset: store.panOffset
+                        canvasOffset: store.panOffset,
+                        highlightID: hoveredEdgeID
                     )
                 }
 
@@ -89,6 +129,33 @@ struct GraphView: View {
             }
             .clipped()
             .contentShape(Rectangle())
+            .gesture(SpatialTapGesture().onEnded { value in
+                let zoom = store.zoom * gestureZoom
+                let point = contentPoint(value.location, zoom: zoom)
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                    if let edge = nearestEdge(to: point, in: layout, zoom: zoom) {
+                        store.linkPopover = AppStore.LinkSelection(childID: edge.childID)
+                    } else {
+                        store.linkPopover = nil
+                    }
+                }
+            })
+            .onContinuousHover { phase in
+                let zoom = store.zoom * gestureZoom
+                switch phase {
+                case .active(let location):
+                    let edge = nearestEdge(to: contentPoint(location, zoom: zoom), in: layout, zoom: zoom)
+                    if hoveredEdgeID != edge?.id {
+                        hoveredEdgeID = edge?.id
+                        if edge != nil { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
+                    }
+                case .ended:
+                    if hoveredEdgeID != nil {
+                        hoveredEdgeID = nil
+                        NSCursor.arrow.set()
+                    }
+                }
+            }
             .gesture(
                 DragGesture(minimumDistance: 3)
                     .onChanged { value in
@@ -172,6 +239,34 @@ struct GraphView: View {
                 }
                 .zIndex(10)
                 .allowsHitTesting(true)
+            }
+            .overlay {
+                // Anchor on the CURRENT layout's edge midpoint — a frozen
+                // click point goes stale the moment the tree reflows.
+                if let selection = store.linkPopover,
+                   let child = store.allNodes[selection.childID],
+                   let edge = layout.edges.first(where: { $0.childID == selection.childID }) {
+                    let zoom = store.zoom * gestureZoom
+                    let mid = CGPoint(x: (edge.from.x + edge.to.x) / 2, y: (edge.from.y + edge.to.y) / 2)
+                    let anchor = CGPoint(
+                        x: mid.x * zoom + store.panOffset.width,
+                        y: mid.y * zoom + store.panOffset.height
+                    )
+                    LinkPopoverView(
+                        child: child,
+                        parent: store.parentOf[child.id].flatMap { store.allNodes[$0] }
+                    ) {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                            store.linkPopover = nil
+                        }
+                    }
+                    .position(
+                        x: min(max(anchor.x, 170), max(geo.size.width - 170, 170)),
+                        y: max(anchor.y - 150, 130)
+                    )
+                    .transition(.scale(scale: 0.88, anchor: .bottom).combined(with: .opacity))
+                    .zIndex(20)
+                }
             }
         }
     }
@@ -369,6 +464,9 @@ private struct EdgeCanvas: View {
     /// canvas fills the viewport and pans/zooms its coordinate space, so
     /// strokes and labels stay vector-sharp at any zoom).
     var canvasOffset: CGSize = .zero
+    /// Edge under the cursor — drawn with a soft glow as the click
+    /// affordance for the link popover.
+    var highlightID: String?
 
     /// Orthogonal elbow with small rounded corners — reads much cleaner than
     /// bezier S-curves on dense trees.
@@ -438,6 +536,13 @@ private struct EdgeCanvas: View {
                 let color = flagged.contains(edge.childID) ? Color.red : edge.tier.color
                 var style = StrokeStyle(lineWidth: Theme.edgeWidth(bps: edge.bps), lineCap: .round)
                 if edge.dashed { style.dash = [6, 5] }
+                if edge.id == highlightID {
+                    context.stroke(
+                        path,
+                        with: .color(color.opacity(0.3)),
+                        style: StrokeStyle(lineWidth: Theme.edgeWidth(bps: edge.bps) + 6, lineCap: .round)
+                    )
+                }
                 context.stroke(path, with: .color(color.opacity(opacity)), style: style)
 
                 // Video tunnel marker: a pink companion line means this link
@@ -686,6 +791,111 @@ private struct NodeCard: View {
     private func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+/// Floating card for a clicked edge: the connection's facts — negotiated
+/// link, cable eMarker identity (first hop only; deeper cables are not
+/// visible to the host's port manager), PD power contract, Doctor flags.
+private struct LinkPopoverView: View {
+    @Environment(AppStore.self) private var store
+    let child: DeviceNode
+    let parent: DeviceNode?
+    let dismiss: () -> Void
+
+    var body: some View {
+        let link = store.portLink(for: child)
+        let issues = store.issues.byNode[child.id] ?? []
+
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 7) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(child.tier.color)
+                    .frame(width: 16, height: 4)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("\(parent?.name ?? "Mac") → \(child.name)")
+                        .appFont(11.5, weight: .semibold)
+                        .lineLimit(1)
+                    Text(link != nil ? "physical cable · receptacle \(link!.portNumber)" : "link")
+                        .appFont(9)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 6)
+                Button(action: dismiss) {
+                    Image(systemName: "xmark.circle.fill")
+                        .appFont(12)
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            Divider()
+
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
+                if !child.speedLabel.isEmpty {
+                    row("Negotiated", child.speedLabel)
+                }
+                if child.carriesVideo {
+                    row("Video", child.videoTunnelCount > 0 ? "DP ×\(child.videoTunnelCount) tunneled" : "yes")
+                }
+                if let power = child.powerSinkMA {
+                    row("Power sink", "\(power) mA")
+                }
+                if let marker = link?.eMarker {
+                    divider("Cable (eMarker)")
+                    if let type = marker.productTypeDescription { row("Type", type) }
+                    if let vid = marker.vendorID {
+                        row("Maker", "\(Format.hex(vid, width: 4))\(marker.productID.map { ":\(Format.hex($0, width: 4))" } ?? "")")
+                    }
+                    if let speed = marker.ratedSpeed { row("Rated", speed) }
+                    if let current = marker.ratedCurrent { row("Current", current + (marker.maxVBusVoltage.map { " · \($0)" } ?? "")) }
+                    if let latency = marker.latencyLabel { row("Latency", latency) }
+                    if let termination = marker.termination { row("Termination", termination) }
+                    if let construction = marker.construction { row("Build", construction) }
+                } else if let link, link.active {
+                    divider("Cable")
+                    row("eMarker", "none — legacy/unmarked cable")
+                }
+                if let contract = link?.powerContract {
+                    divider("Power in")
+                    row("Contract", contract.label)
+                    if let inMW = store.snapshot?.power?.systemPowerInMW {
+                        row("Drawing", String(format: "%.1f W now", Double(inMW) / 1000))
+                    }
+                }
+            }
+
+            ForEach(issues.prefix(2)) { issue in
+                Label(issue.title, systemImage: issue.severity == .problem
+                    ? "exclamationmark.octagon.fill"
+                    : (issue.severity == .warning ? "exclamationmark.triangle.fill" : "info.circle.fill"))
+                    .appFont(9.5)
+                    .foregroundStyle(issue.severity == .problem ? .red : (issue.severity == .warning ? .orange : .secondary))
+                    .lineLimit(1)
+            }
+        }
+        .padding(11)
+        .frame(width: 300, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 11))
+        .overlay(RoundedRectangle(cornerRadius: 11).stroke(.quaternary, lineWidth: 1))
+        .shadow(color: .black.opacity(0.25), radius: 16, y: 7)
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        GridRow {
+            Text(label).appFont(9.5).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+            Text(value).appFont(10, weight: .medium).lineLimit(1)
+        }
+    }
+
+    private func divider(_ title: String) -> some View {
+        GridRow {
+            Text(title)
+                .appFont(8.5, weight: .bold)
+                .foregroundStyle(.tertiary)
+                .textCase(.uppercase)
+                .gridCellColumns(2)
+                .padding(.top, 3)
+        }
     }
 }
 

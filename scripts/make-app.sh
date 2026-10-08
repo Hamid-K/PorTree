@@ -6,7 +6,7 @@ set -euo pipefail
 BIN_PATH="${1:?usage: make-app.sh <release bin path>}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/dist/Portree.app"
-VERSION="0.2.0"
+VERSION="1.2.0"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
