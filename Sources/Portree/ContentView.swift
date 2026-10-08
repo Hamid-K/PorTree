@@ -302,31 +302,61 @@ private struct EmptyStateView: View {
 }
 
 struct LegendView: View {
+    @Environment(AppStore.self) private var store
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("Links").appFont(10, weight: .bold).foregroundStyle(.secondary)
-            ForEach([Tier.usb1, .usb2, .usb3, .usb4, .thunderbolt, .fabric, .infrastructure, .error], id: \.self) { tier in
-                HStack(spacing: 7) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(tier.color)
-                        .frame(width: 20, height: max(2, tier == .usb1 ? 2 : Theme.edgeWidth(bps: representativeBps(tier))))
-                    Text(tier.legendLabel).appFont(10)
+        if store.legendCollapsed {
+            // Folded: a small chip that expands on click.
+            Button {
+                withAnimation(.snappy) { store.legendCollapsed = false }
+            } label: {
+                Label("Legend", systemImage: "paintpalette")
+                    .appFont(10, weight: .semibold)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(.quaternary, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .help("Expand the legend")
+        } else {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text("Links").appFont(10, weight: .bold).foregroundStyle(.secondary)
+                    Spacer(minLength: 20)
+                    Image(systemName: "chevron.down")
+                        .appFont(8.5, weight: .bold)
+                        .foregroundStyle(.tertiary)
                 }
+                ForEach([Tier.usb1, .usb2, .usb3, .usb4, .thunderbolt, .fabric, .infrastructure, .error], id: \.self) { tier in
+                    HStack(spacing: 7) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(tier.color)
+                            .frame(width: 20, height: max(2, tier == .usb1 ? 2 : Theme.edgeWidth(bps: representativeBps(tier))))
+                        Text(tier.legendLabel).appFont(10)
+                    }
+                }
+                HStack(spacing: 7) {
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color.pink)
+                        .frame(width: 20, height: 2)
+                    Text("video on link (DP tunnel / DisplayLink)").appFont(10)
+                }
+                Divider().frame(width: 180)
+                Text("thickness = speed · dashed = USB 1.x\nwide soft bar = system backbone")
+                    .appFont(9)
+                    .foregroundStyle(.secondary)
             }
-            HStack(spacing: 7) {
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(Color.pink)
-                    .frame(width: 20, height: 2)
-                Text("video on link (DP tunnel / DisplayLink)").appFont(10)
+            .padding(10)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(.quaternary, lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 9))
+            .onTapGesture {
+                withAnimation(.snappy) { store.legendCollapsed = true }
             }
-            Divider().frame(width: 180)
-            Text("thickness = speed · dashed = USB 1.x\nwide soft bar = system backbone")
-                .appFont(9)
-                .foregroundStyle(.secondary)
+            .help("Click to fold the legend")
         }
-        .padding(10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(.quaternary, lineWidth: 1))
     }
 
     private func representativeBps(_ tier: Tier) -> Int64 {

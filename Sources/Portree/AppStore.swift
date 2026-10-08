@@ -260,6 +260,8 @@ final class AppStore {
     var expandedTags: Set<UInt64> = []
     /// Persistent legend overlay in the graph corner (palette button toggles).
     var legendShown = true { didSet { persist(legendShown, "view.legend2") } }
+    /// Legend folded down to a small chip (click toggles).
+    var legendCollapsed = false { didSet { persist(legendCollapsed, "view.legendCollapsed") } }
     /// Bandwidth overlay (allocated share + live rates) — OFF by default,
     /// deliberately not persisted.
     var bandwidthOverlay = false
@@ -358,6 +360,7 @@ final class AppStore {
             // Fresh key: the legend chrome was rebuilt, old persisted "off"
             // states are deliberately not carried over.
             legendShown = defaults.object(forKey: "portree.view.legend2") as? Bool ?? true
+            legendCollapsed = defaults.object(forKey: "portree.view.legendCollapsed") as? Bool ?? false
         }
         if let raw = defaults.string(forKey: "portree.view.orientation"),
            let restored = LayoutOrientation(rawValue: raw) {
