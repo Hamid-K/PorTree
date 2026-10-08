@@ -349,7 +349,10 @@ struct LegendView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(10)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 9))
+            // fixedSize: the header's Spacer must not inflate the legend to
+            // the full pane width — intrinsic row width only.
+            .fixedSize()
+            .background(.ultraThinMaterial.opacity(0.8), in: RoundedRectangle(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9).stroke(.quaternary, lineWidth: 1))
             .contentShape(RoundedRectangle(cornerRadius: 9))
             .onTapGesture {
