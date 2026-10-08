@@ -141,6 +141,11 @@ struct GraphView: View {
                     .scaleEffect(gestureZoom, anchor: .topLeading)
                     .offset(store.panOffset)
             }
+            // Pin the stage to the VIEWPORT: the content frame is larger
+            // than the pane (layout × zoom), and without this the bottom-
+            // anchored chrome (legend, zoom cluster) lays out at the bottom
+            // of the oversized stack — far below the visible pane.
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .clipped()
             .contentShape(Rectangle())
             .gesture(SpatialTapGesture().onEnded { value in

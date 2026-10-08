@@ -13,7 +13,7 @@ final class UpdateChecker {
 
     // Single source of truth for the app version — make-app.sh greps this
     // line into CFBundleShortVersionString at package time.
-    static let fallbackVersion = "1.3.0"
+    static let fallbackVersion = "1.3.1"
 
     static var currentVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
