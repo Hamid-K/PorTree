@@ -147,16 +147,19 @@ struct TreeLayout {
             ? CGSize(width: maxMainExtent + 48, height: cursorCross + 24)
             : CGSize(width: cursorCross + 24, height: maxMainExtent + 48)
 
+        // Horizontal anchors sit at the HEADER line (base-height center),
+        // not the card's center: a tag-expanded card grows downward, and
+        // center-anchoring would bend every edge into an S around it.
         func anchorOut(_ id: UInt64) -> CGPoint {
             let point = positions[id]!
             return horizontal
-                ? CGPoint(x: point.x + Self.nodeWidth, y: point.y + height(of: id) / 2)
+                ? CGPoint(x: point.x + Self.nodeWidth, y: point.y + min(height(of: id), Self.nodeHeight) / 2)
                 : CGPoint(x: point.x + Self.nodeWidth / 2, y: point.y + height(of: id))
         }
         func anchorIn(_ id: UInt64) -> CGPoint {
             let point = positions[id]!
             return horizontal
-                ? CGPoint(x: point.x, y: point.y + height(of: id) / 2)
+                ? CGPoint(x: point.x, y: point.y + min(height(of: id), Self.nodeHeight) / 2)
                 : CGPoint(x: point.x + Self.nodeWidth / 2, y: point.y)
         }
 
