@@ -91,6 +91,17 @@ Separate from the Doctor, the **device guard** keeps a persistent known-devices 
 
 Rules only fire on provable inputs; a rule that can't prove its data stays silent.
 
+## USB security
+
+PorTree doubles as a USB security monitor — the same registry truth, pointed at the attack surface. Everything is local; nothing leaves the machine.
+
+- **Device guard** (on by default) — the first launch learns every attached device as the trusted baseline (`~/Library/Application Support/Portree/known-devices.json`). From then on, any device this Mac has *never seen* flashes red in the graph and sidebar, plays a distinct alert sound, and stays flagged until you right-click → **Trust this device** (or *Trust All Connected Devices* to re-learn). Removals never alert — only unknown arrivals do.
+- **Identity rules that resist spoofing-by-omission** — a serial-less device keeps its trust across port moves, but a serial-less clone of a serial-bearing known device does **not** pass.
+- **Keystroke-injection (BadUSB) heuristics** — the Doctor flags a keyboard interface paired with mass storage on one device (the classic rubber-ducky payload carrier, problem), a keyboard interface on a device that doesn't present as a keyboard (warning), and notes every keyboard-class device when more than one can type into this Mac. Every keyboard-class hot-plug raises an alert event with a sound — trusted or not.
+- **Baseline diff forensics** — freeze or save a known-good hardware state and compare after travel, servicing, or a borrowed dock: added / removed / changed devices keyed by hardware identity, built for the "why is there a new HID device" moment.
+- **Persisted evidence** — the full event log (connects, disconnects, flapping storms, alerts) is written as JSONL under Application Support for later review.
+- **Unknown-device workflow** — spotlight the flagged device, open its raw descriptors and interfaces (*what can this thing actually do?*), web-search its vid:pid, then trust it or unplug it.
+
 ## Requirements
 
 - macOS 15+ (registry keys verified on macOS 26/27, Apple Silicon)
