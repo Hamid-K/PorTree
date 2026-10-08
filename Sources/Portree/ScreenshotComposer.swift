@@ -11,13 +11,16 @@ import PortreeCore
 @MainActor
 enum ScreenshotComposer {
 
+    /// Renders whatever the store already holds — the CALLER prepares the
+    /// snapshot (PortreeApp headless init does). Re-capturing here would
+    /// stomp a --from-snapshot load with live data and ghost-diff artifacts.
     static func export(to url: URL) -> Bool {
         NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
         let store = AppStore.shared
         let previousBackground = store.canvasBackground
         store.canvasBackground = .graphite
         defer { store.canvasBackground = previousBackground }  // don't clobber the persisted GUI preference
-        store.prepareHeadlessScreenshot()
+        if store.snapshot == nil { store.prepareHeadlessScreenshot() }
 
         let size = CGSize(width: 1760, height: 1040)
         let content = ComposedShot(store: store, size: size)

@@ -69,14 +69,21 @@ final class AppStore {
     @ObservationIgnored private var layoutCache: TreeLayout?
 
     func currentLayout() -> TreeLayout {
+        // The key hashes the DERIVED per-node heights rather than trying to
+        // enumerate every input of TagList.tags (rates, overlays, guard
+        // flags, diff state, …) — any input that changes a card's height
+        // changes the key by construction, so card frames and edge anchors
+        // can never disagree. Heights iterate only the expanded cards;
+        // recomputing them per body eval is trivial next to a layout build.
+        let nodeHeights = TagMetrics.nodeHeights(store: self)
         var hasher = Hasher()
         hasher.combine(snapshot?.takenAt)
         hasher.combine(collapsed)
         hasher.combine(orientation)
-        hasher.combine(expandedTags)
-        hasher.combine(fontScale)
         hasher.combine(ghostIDs)
         hasher.combine(sinkNodes.map(\.node.id))
+        hasher.combine(sinkNodes.map(\.parentID))
+        hasher.combine(nodeHeights)
         let key = hasher.finalize()
         if let cached = layoutCache, key == layoutCacheKey { return cached }
         let layout = TreeLayout(
@@ -86,7 +93,7 @@ final class AppStore {
             pciRoots: pciDisplayRoots,
             collapsed: collapsed,
             orientation: orientation,
-            nodeHeights: TagMetrics.nodeHeights(store: self)
+            nodeHeights: nodeHeights
         )
         layoutCache = layout
         layoutCacheKey = key
@@ -769,8 +776,8 @@ final class AppStore {
     /// Headless screenshot support (`portree --export-screenshot`): capture a
     /// live snapshot, pick a visually rich selection, seed a couple of honest
     /// event rows so the composed panes aren't empty.
-    func prepareHeadlessScreenshot() {
-        apply(Snapshot.capture())
+    func prepareHeadlessScreenshot(using snapshot: Snapshot? = nil) {
+        apply(snapshot ?? Snapshot.capture())
         selection = allNodes.values.first { $0.twin != nil }?.id
             ?? allNodes.values.first { $0.kind == .tbSwitch && parentOf[$0.id] != nil }?.id
             ?? allNodes.values.first?.id

@@ -40,9 +40,21 @@ struct PortreeApp: App {
         let wantsDump = args.contains("--dump")
         let graphPath = path(after: "--export-graph")
         let shotPath = path(after: "--export-screenshot")
+        let fromPath = path(after: "--from-snapshot")
         if wantsDump || graphPath != nil || shotPath != nil {
             let store = AppStore.shared
-            store.prepareHeadlessScreenshot()
+            var loaded: Snapshot?
+            if let fromPath {
+                // Render a SAVED topology (e.g. a --dump edited for
+                // screenshot redaction) instead of capturing live.
+                guard let data = FileManager.default.contents(atPath: fromPath),
+                      let snapshot = try? Exporters.decodeSnapshot(data) else {
+                    FileHandle.standardError.write(Data("could not load snapshot at \(fromPath)\n".utf8))
+                    exit(1)
+                }
+                loaded = snapshot
+            }
+            store.prepareHeadlessScreenshot(using: loaded)
             var failed = false
             if wantsDump {
                 if let snapshot = store.snapshot, let data = try? Exporters.json(snapshot) {

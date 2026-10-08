@@ -59,8 +59,13 @@ struct GraphView: View {
         return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
     }
 
+    /// Cards render at TRUE size for the settled zoom (frames, positions and
+    /// fonts all multiplied by `zoom`) so text stays vector-crisp — a layer
+    /// scaleEffect would magnify already-rasterized textures. Layout stays in
+    /// unscaled content space: scaling commutes because every point constant
+    /// in a card scales linearly.
     @ViewBuilder
-    private func graphContent(layout: TreeLayout, search: (matches: Set<UInt64>, visible: Set<UInt64>)?) -> some View {
+    private func graphContent(layout: TreeLayout, search: (matches: Set<UInt64>, visible: Set<UInt64>)?, zoom: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
             ForEach(layout.visibleNodes) { node in
                 let position = layout.positions[node.id] ?? .zero
@@ -78,13 +83,14 @@ struct GraphView: View {
                     isMatch: (search.map { $0.matches.contains(node.id) } ?? false)
                         || store.focusedNodeID == node.id
                 )
-                .frame(width: TreeLayout.nodeWidth, height: cardHeight)
+                .frame(width: TreeLayout.nodeWidth * zoom, height: cardHeight * zoom)
                 .position(
-                    x: position.x + TreeLayout.nodeWidth / 2,
-                    y: position.y + cardHeight / 2
+                    x: (position.x + TreeLayout.nodeWidth / 2) * zoom,
+                    y: (position.y + cardHeight / 2) * zoom
                 )
             }
         }
+        .environment(\.zoomScale, zoom)
     }
 
     var body: some View {
@@ -122,9 +128,16 @@ struct GraphView: View {
                     )
                 }
 
-                graphContent(layout: layout, search: search)
-                    .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
-                    .scaleEffect(store.zoom * gestureZoom, anchor: .topLeading)
+                // Settled zoom is geometric (crisp); only the LIVE pinch uses
+                // a layer scaleEffect — transient blur under the fingers,
+                // re-rendered sharp the moment the gesture ends.
+                graphContent(layout: layout, search: search, zoom: store.zoom)
+                    .frame(
+                        width: layout.size.width * store.zoom,
+                        height: layout.size.height * store.zoom,
+                        alignment: .topLeading
+                    )
+                    .scaleEffect(gestureZoom, anchor: .topLeading)
                     .offset(store.panOffset)
             }
             .clipped()
@@ -613,6 +626,7 @@ private struct EdgeCanvas: View {
 
 private struct NodeCard: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.zoomScale) private var z
     let node: DeviceNode
     let height: CGFloat
     let collapsedCount: Int
@@ -630,7 +644,7 @@ private struct NodeCard: View {
     private var tagArea: some View {
         let tags = TagList.tags(node: node, store: store, verbose: false)
         if store.expandedTags.contains(node.id) {
-            FlowLayout(spacing: 4) {
+            FlowLayout(spacing: 4 * z) {
                 ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
                     CapsuleTag(text: tag.text, color: tag.color)
                 }
@@ -638,7 +652,7 @@ private struct NodeCard: View {
             }
         } else {
             let fit = TagMetrics.fittingPrefix(tags, scale: store.fontScale)
-            HStack(spacing: 4) {
+            HStack(spacing: 4 * z) {
                 ForEach(Array(tags.prefix(fit).enumerated()), id: \.offset) { _, tag in
                     CapsuleTag(text: tag.text, color: tag.color)
                 }
@@ -655,8 +669,8 @@ private struct NodeCard: View {
         } label: {
             Text(label)
                 .appFont(8.5, weight: .bold)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 1)
+                .padding(.horizontal, 5 * z)
+                .padding(.vertical, 1 * z)
                 .foregroundStyle(.secondary)
                 .background(.quaternary, in: Capsule())
                 .fixedSize()
@@ -665,13 +679,13 @@ private struct NodeCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 7) {
+        VStack(alignment: .leading, spacing: 4 * z) {
+            HStack(spacing: 7 * z) {
                 Image(systemName: store.effectiveCategory(of: node).symbol)
                     .appFont(12, weight: .medium)
                     .foregroundStyle(node.tier.color)
-                    .frame(width: 22, height: 22)
-                    .background(node.tier.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 5))
+                    .frame(width: 22 * z, height: 22 * z)
+                    .background(node.tier.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 5 * z))
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(node.name)
@@ -683,15 +697,15 @@ private struct NodeCard: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                Spacer(minLength: 2)
+                Spacer(minLength: 2 * z)
                 if !node.children.isEmpty || collapsedCount > 0 {
                     Button {
                         store.toggleCollapsed(node.id)
                     } label: {
                         Text(collapsedCount > 0 ? "+\(collapsedCount)" : "−")
                             .appFont(9.5, weight: .bold)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
+                            .padding(.horizontal, 6 * z)
+                            .padding(.vertical, 1 * z)
                             .background(.quaternary, in: Capsule())
                     }
                     .buttonStyle(.plain)
@@ -700,20 +714,20 @@ private struct NodeCard: View {
 
             tagArea
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .frame(width: TreeLayout.nodeWidth, height: height, alignment: .topLeading)
+        .padding(.horizontal, 9 * z)
+        .padding(.vertical, 6 * z)
+        .frame(width: TreeLayout.nodeWidth * z, height: height * z, alignment: .topLeading)
         .background(
             isSelected ? Color.accentColor.opacity(0.14) : Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 9)
+            in: RoundedRectangle(cornerRadius: 9 * z)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 9)
+            RoundedRectangle(cornerRadius: 9 * z)
                 .stroke(
                     store.overdriveIDs.contains(node.id) || store.untrustedIDs.contains(node.id) ? Color.red
                         : (isReenumerated ? Color.yellow : (isSelected ? Color.accentColor : node.tier.color)),
-                    lineWidth: store.overdriveIDs.contains(node.id) || store.untrustedIDs.contains(node.id) ? 2.5
-                        : (isSelected || isReenumerated ? 2 : 1.4)
+                    lineWidth: (store.overdriveIDs.contains(node.id) || store.untrustedIDs.contains(node.id) ? 2.5
+                        : (isSelected || isReenumerated ? 2 : 1.4)) * z
                 )
         )
         .overlay(alignment: .topTrailing) {
@@ -721,25 +735,25 @@ private struct NodeCard: View {
             if let badge = Theme.protocolBadge(for: node),
                node.kind != .pciDevice || store.parentOf[node.id] == nil || store.allNodes[store.parentOf[node.id]!]?.kind == .system {
                 CapsuleTag(text: badge.label, color: badge.color)
-                    .offset(x: -6, y: -7)
+                    .offset(x: -6 * z, y: -7 * z)
             }
         }
         .overlay(alignment: .bottom) {
-            VStack(spacing: 1) {
+            VStack(spacing: 1 * z) {
                 if store.isRecording, store.powerOverlay,
                    let power = store.powerSeries[node.id], power.contains(where: { $0 > 0 }) {
                     Sparkline(samples: power, color: .mint, capacity: 60, tick: store.sampleCount)
-                        .frame(height: 8)
+                        .frame(height: 8 * z)
                         .opacity(0.6)
                 }
                 if store.isRecording, let samples = store.series[node.id], samples.contains(where: { $0 > 0 }) {
                     Sparkline(samples: samples, color: node.tier.color, capacity: 60, tick: store.sampleCount)
-                        .frame(height: 13)
+                        .frame(height: 13 * z)
                         .opacity(0.55)
                 }
             }
-            .padding(.horizontal, 9)
-            .padding(.bottom, 2)
+            .padding(.horizontal, 9 * z)
+            .padding(.bottom, 2 * z)
             .allowsHitTesting(false)
         }
         .modifier(CardGlow(
@@ -748,10 +762,10 @@ private struct NodeCard: View {
             color: store.untrustedIDs.contains(node.id) ? Color.red.opacity(0.75)
                 : isArrival ? Color.yellow.opacity(0.8)
                 : isMatch ? Color.yellow.opacity(0.5) : nil,
-            radius: store.untrustedIDs.contains(node.id) ? 9 : (isArrival ? 10 : 7)
+            radius: (store.untrustedIDs.contains(node.id) ? 9 : (isArrival ? 10 : 7)) * z
         ))
         .opacity(isGhost ? 0.45 : (isDimmed ? 0.25 : 1.0))
-        .contentShape(RoundedRectangle(cornerRadius: 9))
+        .contentShape(RoundedRectangle(cornerRadius: 9 * z))
         .onTapGesture { store.selection = node.id }
         .contextMenu {
             if store.untrustedIDs.contains(node.id) {
@@ -1239,6 +1253,7 @@ struct Sparkline: View {
 }
 
 struct CapsuleTag: View {
+    @Environment(\.zoomScale) private var z
     let text: String
     var color: Color = .secondary
     /// Cards stay dense at 8.5; the inspector renders readable 11pt chips.
@@ -1247,8 +1262,8 @@ struct CapsuleTag: View {
     var body: some View {
         Text(text)
             .appFont(size, weight: .semibold)
-            .padding(.horizontal, size > 9 ? 7 : 5)
-            .padding(.vertical, size > 9 ? 2 : 1)
+            .padding(.horizontal, (size > 9 ? 7 : 5) * z)
+            .padding(.vertical, (size > 9 ? 2 : 1) * z)
             .foregroundStyle(color)
             .background {
                 // Opaque base under the tint — pure-transparency chips are
@@ -1256,7 +1271,7 @@ struct CapsuleTag: View {
                 Capsule().fill(Color(nsColor: .controlBackgroundColor))
                 Capsule().fill(color.opacity(0.14))
             }
-            .overlay(Capsule().stroke(color.opacity(0.55), lineWidth: 0.8))
+            .overlay(Capsule().stroke(color.opacity(0.55), lineWidth: 0.8 * z))
             .fixedSize()
     }
 }

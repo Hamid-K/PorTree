@@ -159,21 +159,35 @@ private struct FontScaleKey: EnvironmentKey {
     static let defaultValue: CGFloat = 1.0
 }
 
+/// Settled graph zoom, applied at RENDER time (fonts, paddings, frames)
+/// instead of a layer scaleEffect — scaleEffect magnifies already-rasterized
+/// textures and blurs text at zoom > 1. Only the live pinch gesture still
+/// uses scaleEffect (transient blur while fingers are down is fine).
+private struct ZoomScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1.0
+}
+
 extension EnvironmentValues {
     var fontScale: CGFloat {
         get { self[FontScaleKey.self] }
         set { self[FontScaleKey.self] = newValue }
     }
+
+    var zoomScale: CGFloat {
+        get { self[ZoomScaleKey.self] }
+        set { self[ZoomScaleKey.self] = newValue }
+    }
 }
 
 private struct AppFontModifier: ViewModifier {
     @Environment(\.fontScale) private var scale
+    @Environment(\.zoomScale) private var zoom
     let size: CGFloat
     let weight: Font.Weight
     let design: Font.Design
 
     func body(content: Content) -> some View {
-        content.font(.system(size: size * scale, weight: weight, design: design))
+        content.font(.system(size: size * scale * zoom, weight: weight, design: design))
     }
 }
 

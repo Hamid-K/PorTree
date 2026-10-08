@@ -11,6 +11,14 @@ public enum Exporters {
         return try encoder.encode(snapshot)
     }
 
+    /// Inverse of `json(_:)` — loads a snapshot exported by --dump or the
+    /// baseline save (used by --from-snapshot to render saved topologies).
+    public static func decodeSnapshot(_ data: Data) throws -> Snapshot {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(Snapshot.self, from: data)
+    }
+
     /// Writes a timestamped snapshot into `directory` and returns the URL.
     @discardableResult
     public static func writeSnapshot(_ snapshot: Snapshot, to directory: URL) throws -> URL {
