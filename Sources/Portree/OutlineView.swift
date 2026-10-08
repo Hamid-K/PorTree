@@ -266,6 +266,7 @@ private struct TypeRow: View {
                     .appFont(12)
                     .lineLimit(1)
                 if store.untrustedIDs.contains(node.id) {
+                    BlinkingDot(diameter: 7)
                     Image(systemName: "exclamationmark.shield.fill")
                         .appFont(10)
                         .foregroundStyle(.red)
@@ -357,6 +358,7 @@ private struct OutlineNodeRow: View {
                 .strikethrough(store.ghostIDs.contains(node.id))
                 .lineLimit(1)
             if store.untrustedIDs.contains(node.id) {
+                BlinkingDot(diameter: 7)
                 Image(systemName: "exclamationmark.shield.fill")
                     .appFont(10)
                     .foregroundStyle(.red)

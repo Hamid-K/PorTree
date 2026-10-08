@@ -810,6 +810,13 @@ private struct NodeCard: View {
                     .offset(x: -6 * z, y: -7 * z)
             }
         }
+        .overlay(alignment: .topLeading) {
+            // Device guard: unmissable blinking red dot on unknown devices.
+            if store.untrustedIDs.contains(node.id) {
+                BlinkingDot(diameter: 9 * z)
+                    .offset(x: -4 * z, y: -4 * z)
+            }
+        }
         .overlay(alignment: .bottom) {
             VStack(spacing: 1 * z) {
                 if store.isRecording, store.powerOverlay,
@@ -982,6 +989,25 @@ private struct LinkPopoverView: View {
                 .gridCellColumns(2)
                 .padding(.top, 3)
         }
+    }
+}
+
+/// The device guard's attention marker: a red dot blinking at ~1 Hz.
+struct BlinkingDot: View {
+    var diameter: CGFloat = 9
+    @State private var dimmed = false
+
+    var body: some View {
+        Circle()
+            .fill(.red)
+            .frame(width: diameter, height: diameter)
+            .overlay(Circle().stroke(.white.opacity(0.85), lineWidth: diameter / 8))
+            .opacity(dimmed ? 0.15 : 1)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
+                    dimmed = true
+                }
+            }
     }
 }
 
