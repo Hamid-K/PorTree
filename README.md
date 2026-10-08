@@ -36,7 +36,9 @@ Selected-device detail — live I/O while recording, camera capability, power al
 | Sidebar modes | Topology tree, or a **by-type filter** (input, storage, cameras, network, …) where clicking a device spotlights it in the graph with the same fade-out focus as search |
 | Search | Live filter keeping ancestors, graph glow, match counter, ⌘G cycles through hits |
 | Appearance | Dark/Light/System app appearance, selectable canvas background, adjustable UI font scale (⌥⌘±), view state persisted |
-| Export | Snapshot JSON (⇧⌘E), graph PNG/JPEG, reproducible full-app screenshot — all also available headless (below) |
+| Export | Snapshot JSON (⇧⌘E), graph PNG/JPEG, reproducible full-app screenshot — all also available headless (below), including rendering a **saved snapshot** (`--from-snapshot`) |
+| Privacy | Toolbar toggle (and `--redact` headless) masks identity in everything exported: serials, TB UIDs, container IDs and EDID blobs replaced by random same-shape values, consistently within one export — share dumps and screenshots without leaking your hardware identity. Model identifiers (vid:pid, names) stay, since they identify the product, not your unit |
+| Updates | Built-in updater, no framework, no daemon: checks GitHub releases at launch (toggleable), shows the **full changelog** in-app, downloads and swaps the app bundle in place, relaunches. `--check-updates` for scripts |
 | Toolbox | Curated `ioreg` / `log` / `system_profiler` / `pmset` debugging commands with one-click copy and in-app run for the read-only ones |
 
 ## Compared

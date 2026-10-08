@@ -6,7 +6,13 @@ set -euo pipefail
 BIN_PATH="${1:?usage: make-app.sh <release bin path>}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/dist/Portree.app"
-VERSION="1.2.0"
+# Single source of truth: the fallbackVersion constant in UpdateChecker.swift.
+# (|| true keeps set -e from killing the script; failing loudly beats 0.0.0.)
+VERSION="$(grep -o 'fallbackVersion = "[0-9.]*"' "$ROOT/Sources/Portree/UpdateChecker.swift" | grep -o '[0-9][0-9.]*' || true)"
+if [ -z "$VERSION" ]; then
+    echo "error: could not read fallbackVersion from UpdateChecker.swift" >&2
+    exit 1
+fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -23,6 +29,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key><string>Portree</string>
     <key>CFBundleDisplayName</key><string>Portree</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+    <key>NSHumanReadableCopyright</key><string>By Hamid Kashfi (@hkashfi)</string>
     <key>CFBundleVersion</key><string>${VERSION}</string>
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>NSPrincipalClass</key><string>NSApplication</string>

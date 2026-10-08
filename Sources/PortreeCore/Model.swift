@@ -226,6 +226,11 @@ public struct Snapshot: Sendable, Codable {
     public let portLinks: [PortLink]
     /// The Mac's power-input state (adapter contract, live input watts).
     public let power: PowerInfo?
+    /// True when identity values in this snapshot were randomized for
+    /// sharing (Redactor). Loaders must not validate device identities
+    /// against it — the guard and identity-keyed diffs would scream over
+    /// values that were never real.
+    public let redacted: Bool
     public let takenAt: Date
 
     public init(
@@ -236,6 +241,7 @@ public struct Snapshot: Sendable, Codable {
         displaySinks: [DisplaySink] = [],
         portLinks: [PortLink] = [],
         power: PowerInfo? = nil,
+        redacted: Bool = false,
         takenAt: Date = Date()
     ) {
         self.usbRoots = usbRoots
@@ -245,6 +251,7 @@ public struct Snapshot: Sendable, Codable {
         self.displaySinks = displaySinks
         self.portLinks = portLinks
         self.power = power
+        self.redacted = redacted
         self.takenAt = takenAt
     }
 
@@ -259,6 +266,7 @@ public struct Snapshot: Sendable, Codable {
         displaySinks = try container.decodeIfPresent([DisplaySink].self, forKey: .displaySinks) ?? []
         portLinks = try container.decodeIfPresent([PortLink].self, forKey: .portLinks) ?? []
         power = try container.decodeIfPresent(PowerInfo.self, forKey: .power)
+        redacted = try container.decodeIfPresent(Bool.self, forKey: .redacted) ?? false
         takenAt = try container.decodeIfPresent(Date.self, forKey: .takenAt) ?? Date()
     }
 

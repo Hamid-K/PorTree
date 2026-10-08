@@ -58,3 +58,14 @@ import Foundation
         #expect(Format.usbSpeedEnumLabel(2).contains("Low"))
     }
 }
+
+@Suite struct VersionCompareTests {
+    @Test func semverOrdering() {
+        #expect(Format.compareVersions("v1.2.0", "1.2.0") == 0)
+        #expect(Format.compareVersions("v1.3.0", "v1.2.9") > 0)
+        #expect(Format.compareVersions("1.10.0", "1.9.9") > 0)   // numeric, not lexical
+        #expect(Format.compareVersions("0.2.0", "1.2.0") < 0)
+        #expect(Format.compareVersions("1.2", "1.2.0") == 0)     // missing patch = 0
+        #expect(Format.compareVersions("v2.0.0-beta", "2.0.0") == 0)  // suffix ignored
+    }
+}

@@ -124,7 +124,8 @@ struct GraphView: View {
                         zoom: store.zoom * gestureZoom,
                         background: store.canvasBackground,
                         canvasOffset: store.panOffset,
-                        highlightID: hoveredEdgeID
+                        highlightID: hoveredEdgeID,
+                        cableMarks: store.cableMarks
                     )
                 }
 
@@ -226,27 +227,51 @@ struct GraphView: View {
                             LegendView()
                         }
                         Spacer()
-                        HStack(spacing: 6) {
+                        // Maps-style zoom cluster — the obvious, clickable
+                        // way to zoom (pinch / ⌘-scroll / ⌘± still work).
+                        VStack(spacing: 2) {
+                            Button { store.zoomAround(factor: 1.2) } label: {
+                                Image(systemName: "plus.magnifyingglass")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .frame(width: 34, height: 26)
+                            }
+                            .help("Zoom in (⌘+)")
+                            Button { store.setZoom(1.0) } label: {
+                                Text("\(Int((store.zoom * 100).rounded()))%")
+                                    .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                                    .frame(width: 34, height: 18)
+                            }
+                            .help("Reset to 100%")
+                            Button { store.zoomAround(factor: 1 / 1.2) } label: {
+                                Image(systemName: "minus.magnifyingglass")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .frame(width: 34, height: 26)
+                            }
+                            .help("Zoom out (⌘−)")
+                            Divider().frame(width: 30)
+                            Button { store.fitGraph(contentSize: layout.size) } label: {
+                                Image(systemName: "arrow.down.right.and.arrow.up.left.rectangle")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .frame(width: 34, height: 24)
+                            }
+                            .help("Fit the whole tree")
                             Menu {
                                 Button("Export as PNG") { GraphImageExporter.export(store: store, as: .png) }
                                 Button("Export as JPEG") { GraphImageExporter.export(store: store, as: .jpeg) }
                             } label: {
                                 Image(systemName: "camera")
+                                    .font(.system(size: 12))
+                                    .frame(width: 30, height: 20)
                             }
                             .menuStyle(.borderlessButton)
                             .fixedSize()
                             .help("Export the graph as an image")
-                            Button { store.zoomAround(factor: 1 / 1.2) } label: { Image(systemName: "minus.magnifyingglass") }
-                                .help("Zoom out (⌘−)")
-                            Button { store.fitGraph(contentSize: layout.size) } label: { Text("Fit") }
-                                .help("Fit the whole tree")
-                            Button { store.zoomAround(factor: 1.2) } label: { Image(systemName: "plus.magnifyingglass") }
-                                .help("Zoom in (⌘+)")
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .padding(8)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
+                        .buttonStyle(.borderless)
+                        .padding(5)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.quaternary, lineWidth: 1))
+                        .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
                     }
                     .padding(10)
                 }
@@ -305,7 +330,8 @@ struct GraphCanvas: View {
                 flow: [:],
                 time: 0,
                 zoom: 1.0,
-                background: store.canvasBackground
+                background: store.canvasBackground,
+                cableMarks: store.cableMarks
             )
             ForEach(layout.visibleNodes) { node in
                 let position = layout.positions[node.id] ?? .zero
@@ -480,6 +506,10 @@ private struct EdgeCanvas: View {
     /// Edge under the cursor — drawn with a soft glow as the click
     /// affordance for the link popover.
     var highlightID: String?
+    /// Child IDs of edges that are PHYSICAL receptacle cables → true when
+    /// the cable also powers the Mac. Drawn as a small cable glyph on the
+    /// parent-side run of the edge.
+    var cableMarks: [UInt64: Bool] = [:]
 
     /// Orthogonal elbow with small rounded corners — reads much cleaner than
     /// bezier S-curves on dense trees.
@@ -567,6 +597,43 @@ private struct EdgeCanvas: View {
                         with: .color(Color.pink.opacity(opacity * 0.85)),
                         style: StrokeStyle(lineWidth: 1.6, lineCap: .round, dash: [2.5, 3.5])
                     )
+                }
+
+                // Physical receptacle cable: a stylized stretched cable with
+                // USB-C heads on both ends, drawn on the parent-side run —
+                // real cables read differently from logical links at a
+                // glance (orange when the cable also powers the Mac).
+                if let powered = cableMarks[edge.childID], zoom >= 0.3 {
+                    let tint = powered ? Color.orange : Color.indigo
+                    // Perpendicular offset keeps the cable clear of the
+                    // line and its speed label.
+                    let center: CGPoint = horizontal
+                        ? CGPoint(x: edge.from.x + (edge.to.x - edge.from.x) / 4, y: edge.from.y - 12)
+                        : CGPoint(x: edge.from.x - 12, y: edge.from.y + (edge.to.y - edge.from.y) / 4)
+                    let half: CGFloat = 16
+                    let headLong: CGFloat = 7
+                    let headShort: CGFloat = 4.6
+                    let backing = horizontal
+                        ? CGRect(x: center.x - half - 3, y: center.y - 6, width: (half + 3) * 2, height: 12)
+                        : CGRect(x: center.x - 6, y: center.y - half - 3, width: 12, height: (half + 3) * 2)
+                    context.fill(Path(roundedRect: backing, cornerRadius: 6), with: .color(background.chipFill))
+                    var cord = Path()
+                    if horizontal {
+                        cord.move(to: CGPoint(x: center.x - half + headLong, y: center.y))
+                        cord.addLine(to: CGPoint(x: center.x + half - headLong, y: center.y))
+                        let leftHead = CGRect(x: center.x - half, y: center.y - headShort / 2, width: headLong, height: headShort)
+                        let rightHead = CGRect(x: center.x + half - headLong, y: center.y - headShort / 2, width: headLong, height: headShort)
+                        context.fill(Path(roundedRect: leftHead, cornerRadius: 2.2), with: .color(tint))
+                        context.fill(Path(roundedRect: rightHead, cornerRadius: 2.2), with: .color(tint))
+                    } else {
+                        cord.move(to: CGPoint(x: center.x, y: center.y - half + headLong))
+                        cord.addLine(to: CGPoint(x: center.x, y: center.y + half - headLong))
+                        let topHead = CGRect(x: center.x - headShort / 2, y: center.y - half, width: headShort, height: headLong)
+                        let bottomHead = CGRect(x: center.x - headShort / 2, y: center.y + half - headLong, width: headShort, height: headLong)
+                        context.fill(Path(roundedRect: topHead, cornerRadius: 2.2), with: .color(tint))
+                        context.fill(Path(roundedRect: bottomHead, cornerRadius: 2.2), with: .color(tint))
+                    }
+                    context.stroke(cord, with: .color(tint), style: StrokeStyle(lineWidth: 1.7, lineCap: .round))
                 }
 
                 // Merged hub twin: thin parallel stub for the USB2 personality.

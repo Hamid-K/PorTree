@@ -112,6 +112,21 @@ final class AppStore {
         return snapshot?.portLinks.first { $0.cioUID == unsigned }
     }
 
+    /// First-hop node IDs whose upstream edge is a physical receptacle cable
+    /// → true when that cable also powers the Mac. Drives the cable glyph on
+    /// graph edges and the cable capsule in the sidebar.
+    var cableMarks: [UInt64: Bool] {
+        var marks: [UInt64: Bool] = [:]
+        for link in snapshot?.portLinks ?? [] where link.active {
+            guard let uid = link.cioUID,
+                  let node = allNodes.values.first(where: {
+                      $0.kind == .tbSwitch && $0.properties["UID"]?.intValue.map { UInt64(bitPattern: $0) } == uid
+                  }) else { continue }
+            marks[node.id] = link.powerContract != nil
+        }
+        return marks
+    }
+
     struct CableEntry: Identifiable, Hashable {
         let id: String
         let portLabel: String
@@ -360,6 +375,7 @@ final class AppStore {
         }
         soundsEnabled = defaults.object(forKey: "portree.sounds") as? Bool ?? true
         deviceGuard = defaults.object(forKey: "portree.security.guard") as? Bool ?? true
+        redactExports = defaults.object(forKey: "portree.privacy.redactExports") as? Bool ?? false
         if let raw = defaults.string(forKey: "portree.view.sidebarMode"),
            let restored = SidebarMode(rawValue: raw) {
             sidebarMode = restored
@@ -390,6 +406,10 @@ final class AppStore {
     private var monitor: HotplugMonitor?
     private let logWriter = EventLogWriter()
     private var previousSnapshot: Snapshot?
+
+    /// In-app updater (GitHub releases): checked on startup, panel shows the
+    /// changelog, install swaps the bundle and relaunches.
+    let updates = UpdateChecker()
 
     // MARK: Lifecycle
 
@@ -424,6 +444,8 @@ final class AppStore {
         notify_register_dispatch("com.apple.system.powersources.source", &token, DispatchQueue.main) { _ in
             Task { @MainActor in AppStore.shared.scheduleScreenRescan() }
         }
+
+        updates.checkOnLaunch()
     }
 
     private var screenRescanPending = false
@@ -546,7 +568,7 @@ final class AppStore {
     /// unknown device, not just fresh arrivals — a device attached while the
     /// app was closed is caught on the first snapshot after launch.
     private func updateDeviceGuard(alerting: Bool) {
-        guard deviceGuard, let snapshot else {
+        guard deviceGuard, !guardSuspended, let snapshot else {
             untrustedIDs = []
             return
         }
@@ -776,7 +798,12 @@ final class AppStore {
     /// Headless screenshot support (`portree --export-screenshot`): capture a
     /// live snapshot, pick a visually rich selection, seed a couple of honest
     /// event rows so the composed panes aren't empty.
+    /// Loaded or redacted snapshots carry foreign/randomized identities —
+    /// the trust baseline must not scream UNKNOWN over them.
+    private var guardSuspended = false
+
     func prepareHeadlessScreenshot(using snapshot: Snapshot? = nil) {
+        guardSuspended = snapshot != nil
         apply(snapshot ?? Snapshot.capture())
         selection = allNodes.values.first { $0.twin != nil }?.id
             ?? allNodes.values.first { $0.kind == .tbSwitch && parentOf[$0.id] != nil }?.id
@@ -791,6 +818,12 @@ final class AppStore {
     }
 
     // MARK: Graph viewport
+
+    /// Jump straight to an absolute zoom, keeping the viewport center fixed.
+    func setZoom(_ target: CGFloat) {
+        guard zoom > 0 else { return }
+        zoomAround(factor: target / zoom)
+    }
 
     func zoomAround(factor: CGFloat, anchor: CGPoint? = nil) {
         let oldZoom = zoom
@@ -939,13 +972,25 @@ final class AppStore {
         withAnimation(.snappy) { collapsed.removeAll() }
     }
 
+    /// Privacy: when on, every export randomizes serials, TB UIDs,
+    /// container IDs and EDID blobs (consistent within one export) — safe to
+    /// share without leaking this machine's hardware identity.
+    var redactExports = false {
+        didSet { persist(redactExports, "privacy.redactExports") }
+    }
+
     func exportSnapshot() {
         guard let snapshot else { return }
         let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser
         do {
-            let url = try Exporters.writeSnapshot(snapshot, to: downloads)
-            appendEvent(EventRow(kind: .export, title: "Snapshot exported", detail: url.path))
+            let exported = redactExports ? snapshot.redactedCopy() : snapshot
+            let url = try Exporters.writeSnapshot(exported, to: downloads)
+            appendEvent(EventRow(
+                kind: .export,
+                title: redactExports ? "Snapshot exported (identifiers masked)" : "Snapshot exported",
+                detail: url.path
+            ))
             NSWorkspace.shared.activateFileViewerSelecting([url])
         } catch {
             appendEvent(EventRow(kind: .info, title: "Export failed", detail: "\(error)"))
@@ -1314,6 +1359,15 @@ final class AppStore {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             baseline = try decoder.decode(Snapshot.self, from: Data(contentsOf: url))
+            if baseline?.redacted == true {
+                // The file declares its identities were randomized — an
+                // identity-keyed diff against live hardware is meaningless.
+                appendEvent(EventRow(
+                    kind: .alert,
+                    title: "Loaded baseline is a REDACTED export",
+                    detail: "its serials/UIDs were randomized for sharing — every identity will differ from live hardware; use it for structure only"
+                ))
+            }
             recomputeBaselineDiff()
             appendEvent(EventRow(
                 kind: .info,

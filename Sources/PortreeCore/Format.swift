@@ -8,6 +8,24 @@ public enum Tier: String, Sendable, Codable, Hashable {
 
 public enum Format {
 
+    /// Numeric semver comparison for release tags ("v1.2.0", "1.10.3").
+    /// Returns negative when a < b, 0 when equal, positive when a > b.
+    /// Non-numeric components compare as 0 — honest fallback, never a crash.
+    public static func compareVersions(_ a: String, _ b: String) -> Int {
+        func parts(_ s: String) -> [Int] {
+            s.trimmingCharacters(in: CharacterSet(charactersIn: "vV "))
+                .split(separator: ".")
+                .map { Int($0.prefix(while: \.isNumber)) ?? 0 }
+        }
+        let left = parts(a), right = parts(b)
+        for i in 0..<max(left.count, right.count) {
+            let l = i < left.count ? left[i] : 0
+            let r = i < right.count ? right[i] : 0
+            if l != r { return l < r ? -1 : 1 }
+        }
+        return 0
+    }
+
     /// Human label for a link speed in bits/s. All Int64 formatting in this app
     /// goes through interpolation — `String(format: "%d", int64)` silently
     /// truncates to 32 bits (10 Gb/s became 1.4 Gb/s in testing).

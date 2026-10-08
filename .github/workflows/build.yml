@@ -78,6 +78,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The in-app updater compares the release tag against the built-in
+          # version — a stale constant would make every install re-offer
+          # itself forever. Refuse to publish a mismatched release.
+          TAG="${GITHUB_REF_NAME#v}"
+          grep -q "fallbackVersion = \"$TAG\"" Sources/Portree/UpdateChecker.swift || {
+            echo "fallbackVersion does not match tag $GITHUB_REF_NAME — bump UpdateChecker.swift first"; exit 1; }
           gh release create "$GITHUB_REF_NAME" dist/PorTree-*.zip \
             --title "PorTree $GITHUB_REF_NAME" --generate-notes \
             --notes-start-tag "$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')" || \

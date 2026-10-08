@@ -41,6 +41,16 @@ struct PortreeApp: App {
         let graphPath = path(after: "--export-graph")
         let shotPath = path(after: "--export-screenshot")
         let fromPath = path(after: "--from-snapshot")
+        if args.contains("--check-updates") {
+            // Headless update probe: prints the latest release vs this build.
+            Task { @MainActor in
+                let updates = AppStore.shared.updates
+                await updates.checkHeadless()
+                exit(0)
+            }
+            RunLoop.main.run()
+        }
+        let wantsRedaction = args.contains("--redact")
         if wantsDump || graphPath != nil || shotPath != nil {
             let store = AppStore.shared
             var loaded: Snapshot?
@@ -53,6 +63,11 @@ struct PortreeApp: App {
                     exit(1)
                 }
                 loaded = snapshot
+            }
+            if wantsRedaction {
+                // Privacy: randomize serials/UIDs/EDIDs in EVERYTHING this
+                // run emits — JSON and images alike.
+                loaded = (loaded ?? Snapshot.capture()).redactedCopy()
             }
             store.prepareHeadlessScreenshot(using: loaded)
             var failed = false
@@ -85,7 +100,29 @@ struct PortreeApp: App {
         }
         .defaultSize(width: 1360, height: 850)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About PorTree") {
+                    let credits = NSMutableAttributedString(
+                        string: "By Hamid Kashfi — ",
+                        attributes: [.font: NSFont.systemFont(ofSize: 11)]
+                    )
+                    credits.append(NSAttributedString(
+                        string: "@hkashfi",
+                        attributes: [
+                            .link: URL(string: "https://x.com/hkashfi")!,
+                            .font: NSFont.systemFont(ofSize: 11),
+                        ]
+                    ))
+                    NSApp.orderFrontStandardAboutPanel(options: [
+                        .applicationName: "PorTree",
+                        .applicationVersion: UpdateChecker.currentVersion,
+                        .credits: credits,
+                    ])
+                }
+            }
             CommandMenu("Devices") {
+                Button("Check for Updates…") { AppStore.shared.updates.checkManually() }
+                Divider()
                 Button("Rescan") { AppStore.shared.refresh() }
                     .keyboardShortcut("r")
                 Button("Export Snapshot as JSON") { AppStore.shared.exportSnapshot() }

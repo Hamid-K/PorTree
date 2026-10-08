@@ -364,6 +364,17 @@ private struct OutlineNodeRow: View {
                     .help("Never seen on this Mac — right-click to trust")
             }
             Spacer(minLength: 2)
+            // Physical receptacle cable on this node's upstream link —
+            // tagged with the eMarker's own words.
+            if let link = store.portLink(for: node), link.active {
+                let powered = link.powerContract != nil
+                Text(link.eMarker.map { ($0.productTypeDescription ?? "eMarked cable").lowercased() } ?? "unmarked cable")
+                    .appFont(9)
+                    .foregroundStyle(powered ? Color.orange : Color.indigo)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background((powered ? Color.orange : Color.indigo).opacity(0.12), in: Capsule())
+            }
             if !node.speedLabel.isEmpty {
                 Text(node.speedLabel)
                     .appFont(9.5)

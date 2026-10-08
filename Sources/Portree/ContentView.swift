@@ -109,10 +109,24 @@ struct ContentView: View {
                 } label: { Image(systemName: "wrench.and.screwdriver") }
                     .help("Debugging toolbox (⌘T)")
 
+                Button {
+                    NSWorkspace.shared.openApplication(
+                        at: URL(fileURLWithPath: "/System/Applications/Utilities/System Information.app"),
+                        configuration: NSWorkspace.OpenConfiguration()
+                    )
+                } label: { Image(systemName: "list.clipboard") }
+                    .help("Open macOS System Information")
+
                 Toggle(isOn: $store.legendShown) {
                     Image(systemName: "paintpalette")
                 }
                 .help("Legend overlay")
+
+                Toggle(isOn: $store.redactExports) {
+                    Image(systemName: store.redactExports ? "eye.slash.fill" : "eye.slash")
+                        .foregroundStyle(store.redactExports ? .orange : .secondary)
+                }
+                .help("Privacy: mask identifiers (serials, UIDs, EDID) in exports — the live view is never masked")
 
                 Menu {
                     Picker("Appearance", selection: $store.appearance) {
@@ -134,6 +148,8 @@ struct ContentView: View {
                     Toggle("Connection sounds", isOn: $store.soundsEnabled)
                     Toggle("Device guard (flag unknown devices)", isOn: $store.deviceGuard)
                     Button("Trust All Connected Devices") { store.trustAllConnected() }
+                    Divider()
+                    Toggle("Check for updates at launch", isOn: Bindable(store.updates).autoCheckEnabled)
                 } label: {
                     Image(systemName: "circle.lefthalf.filled")
                 }
@@ -148,6 +164,35 @@ struct ContentView: View {
                     store.refresh()
                 } label: { Image(systemName: "arrow.clockwise") }
                     .help("Rescan (⌘R)")
+
+                if store.updates.hasNews || store.updates.panelShown {
+                    Button {
+                        store.updates.panelShown = true
+                    } label: {
+                        switch store.updates.state {
+                        case .failed:
+                            Image(systemName: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
+                                .foregroundStyle(.orange)
+                        case .downloading, .installing:
+                            Image(systemName: "arrow.down.circle.dotted")
+                                .foregroundStyle(.secondary)
+                        default:
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundStyle(.green)
+                                .symbolEffect(.pulse)
+                        }
+                    }
+                    .help({
+                        switch store.updates.state {
+                        case .failed: "Update check failed"
+                        case .downloading, .installing: "Updating…"
+                        default: "Update available"
+                        }
+                    }())
+                    .popover(isPresented: Bindable(store.updates).panelShown, arrowEdge: .bottom) {
+                        UpdatePanel(updates: store.updates)
+                    }
+                }
             }
         }
         .sheet(isPresented: $store.toolboxShown) { ToolboxView() }
