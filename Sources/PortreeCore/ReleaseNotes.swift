@@ -14,16 +14,22 @@ public enum ReleaseNotes {
 
     public static func blocks(_ markdown: String) -> [Block] {
         var blocks: [Block] = []
+        // A blank line ends a paragraph; only consecutive lines soft-wrap.
+        var paragraphOpen = false
         for rawLine in markdown.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
-            guard !line.isEmpty else { continue }
+            guard !line.isEmpty else {
+                paragraphOpen = false
+                continue
+            }
+            defer { if case .paragraph? = blocks.last { paragraphOpen = true } else { paragraphOpen = false } }
             if let heading = strip(line, prefixes: ["### ", "## ", "# "]) {
                 blocks.append(.heading(heading))
             } else if let bullet = strip(line, prefixes: ["- ", "* ", "+ "]) {
                 blocks.append(.bullet(bullet))
             } else if let quote = strip(line, prefixes: ["> ", ">"]) {
                 blocks.append(.quote(quote))
-            } else if case .paragraph(let previous)? = blocks.last {
+            } else if paragraphOpen, case .paragraph(let previous)? = blocks.last {
                 // Soft-wrapped paragraph lines join into one paragraph.
                 blocks[blocks.count - 1] = .paragraph(previous + " " + line)
             } else {

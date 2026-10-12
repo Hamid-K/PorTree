@@ -330,6 +330,34 @@ private struct InterfacesTab: View {
     @Environment(AppStore.self) private var store
     let node: DeviceNode
 
+    /// The banner says only what the evidence supports: how the bridge was
+    /// identified, what kind of channel it is, and where to go next.
+    private var bannerExplanation: String {
+        var parts: [String] = []
+        if let chip = node.bridgeInfo?.chip {
+            parts.append("Identified by its vid:pid as the \(chip).")
+        } else if node.bridgeInfo != nil {
+            parts.append("The bus comes from the interface's own name — only as reliable as the vendor's naming.")
+        }
+        let vendorHID = node.interfaces.contains { entry in
+            let pairs = SubEntry.hidUsagePairs(of: [entry])
+            return entry.properties["bInterfaceClass"]?.intValue == 3
+                && !pairs.isEmpty && pairs.allSatisfy { $0.page == 0xFF || $0.page >= 0xFF00 }
+        }
+        let vendorSpecific = node.interfaces.contains { $0.properties["bInterfaceClass"]?.intValue == 0xFF }
+        if vendorHID {
+            parts.append("It talks over a vendor-defined HID channel; it is not an input device.")
+        } else if vendorSpecific {
+            parts.append("It uses a vendor-specific USB interface.")
+        }
+        if !store.serialPorts(for: node).isEmpty {
+            parts.append("It also publishes a serial port, which you can open from the Serial section or the right-click menu.")
+        } else {
+            parts.append("Its command protocol belongs to the chip vendor; use the vendor's own tools to interact with it.")
+        }
+        return parts.joined(separator: " ")
+    }
+
     private var hasVendorBridge: Bool {
         if node.bridgeInfo != nil { return true }
         return node.interfaces.contains { entry in
@@ -353,7 +381,7 @@ private struct InterfacesTab: View {
                     Label(node.bridgeInfo?.label ?? "Vendor bridge / configuration interface", systemImage: "wrench.adjustable")
                         .appFont(11.5, weight: .semibold)
                         .foregroundStyle(.orange)
-                    Text("This device exposes a vendor-defined HID function. It is not an input device, and its command protocol belongs to the chip vendor. Use the vendor's own configuration tool to interact with it.")
+                    Text(bannerExplanation)
                         .appFont(10.5)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

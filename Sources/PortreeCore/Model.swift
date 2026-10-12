@@ -55,6 +55,9 @@ public struct BridgeInfo: Sendable, Hashable {
     public let chip: String?
 
     public var busLabel: String { buses.joined(separator: "/") + " bridge" }
+    /// Card-sized label that still says how we know: a name-derived guess
+    /// must never look identical to a chip-proven bridge.
+    public var compactLabel: String { chip == nil ? busLabel + " · by name" : busLabel }
     public var label: String {
         busLabel + (chip.map { " (\($0))" } ?? " (per interface name)")
     }
@@ -232,6 +235,17 @@ extension DeviceNode {
     /// it bridges (as strong as the vendor's naming — labeled as such).
     public var bridgeInfo: BridgeInfo? {
         if let vid = vendorID, let pid = productID, let chip = BridgeInfo.knownChips[vid << 16 | pid] {
+            // FT260: strap pins (DCNF0/1) enable I2C, UART or both — one HID
+            // interface per enabled function. The chip ID proves the part,
+            // not the mode.
+            if vid == 0x0403, pid == 0x6030 {
+                let hidCount = interfaces.filter { $0.properties["bInterfaceClass"]?.intValue == 3 }.count
+                switch hidCount {
+                case 2: return BridgeInfo(buses: ["I2C", "UART"], chip: chip.name)
+                case 1: return BridgeInfo(buses: ["I2C or UART"], chip: chip.name + ", one function set by pins")
+                default: return BridgeInfo(buses: ["I2C and/or UART"], chip: chip.name)
+                }
+            }
             return BridgeInfo(buses: chip.buses, chip: chip.name)
         }
         var buses: [String] = []

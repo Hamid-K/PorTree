@@ -1173,7 +1173,7 @@ enum TagList {
             tags.append(Tag(text: verbose ? "USB graphics · \(gfx)" : gfx, color: .pink))
         }
         if let bridge = node.bridgeInfo {
-            tags.append(Tag(text: verbose ? bridge.label : bridge.busLabel, color: .orange))
+            tags.append(Tag(text: verbose ? bridge.label : bridge.compactLabel, color: .orange))
         }
         for port in store.serialPorts(for: node) {
             let name = (port.calloutPath as NSString).lastPathComponent
