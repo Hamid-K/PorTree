@@ -99,6 +99,15 @@ struct PortreeApp: App {
                 .environment(AppStore.shared)
         }
         .defaultSize(width: 1360, height: 850)
+
+        // One console window per serial port (value = /dev/cu.* path);
+        // reopening the same port focuses its existing window.
+        WindowGroup("Serial Console", id: "serial", for: String.self) { path in
+            if let value = path.wrappedValue {
+                SerialTerminalView(path: value)
+            }
+        }
+        .defaultSize(width: 760, height: 480)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About PorTree") {

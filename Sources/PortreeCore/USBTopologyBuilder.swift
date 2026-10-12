@@ -14,8 +14,10 @@ public enum USBTopologyBuilder {
         let controllers = Registry.children(of: root, plane: "IOUSB")
         var portStats: [UInt64: [String: PropertyValue]] = [:]
         var nodes: [DeviceNode] = []
+        // Devices owning a serial port (any driver) — generic detection.
+        let serialOwners = Set(SerialPorts.enumerate().compactMap(\.usbEntryID))
         for controller in controllers {
-            nodes.append(buildController(controller, portStats: &portStats))
+            nodes.append(buildController(controller, portStats: &portStats, serialOwners: serialOwners))
             IOObjectRelease(controller)
         }
         // Pair USB2/USB3 hub twin personalities per controller subtree, and
@@ -111,7 +113,8 @@ public enum USBTopologyBuilder {
 
     private static func buildController(
         _ entry: io_registry_entry_t,
-        portStats: inout [UInt64: [String: PropertyValue]]
+        portStats: inout [UInt64: [String: PropertyValue]],
+        serialOwners: Set<UInt64>
     ) -> DeviceNode {
         let props = Registry.properties(of: entry)
         let className = Registry.className(of: entry)
@@ -121,7 +124,7 @@ public enum USBTopologyBuilder {
         var children: [DeviceNode] = []
         for child in Registry.children(of: entry, plane: "IOUSB") {
             defer { IOObjectRelease(child) }
-            children.append(buildDevice(child, portStats: &portStats))
+            children.append(buildDevice(child, portStats: &portStats, serialOwners: serialOwners))
         }
         let busNumber = (props["locationID"]?.intValue).map { ($0 >> 24) & 0xFF }
         let name: String
@@ -153,7 +156,8 @@ public enum USBTopologyBuilder {
 
     private static func buildDevice(
         _ entry: io_registry_entry_t,
-        portStats: inout [UInt64: [String: PropertyValue]]
+        portStats: inout [UInt64: [String: PropertyValue]],
+        serialOwners: Set<UInt64>
     ) -> DeviceNode {
         var props = Registry.properties(of: entry)
         let registryName = Registry.name(of: entry)
@@ -174,7 +178,7 @@ public enum USBTopologyBuilder {
         var children: [DeviceNode] = []
         for child in Registry.children(of: entry, plane: "IOUSB") {
             defer { IOObjectRelease(child) }
-            children.append(buildDevice(child, portStats: &portStats))
+            children.append(buildDevice(child, portStats: &portStats, serialOwners: serialOwners))
         }
 
         let linkSpeed = props["UsbLinkSpeed"]?.intValue ?? 0
@@ -189,6 +193,11 @@ public enum USBTopologyBuilder {
                     .filter { $0 != .hub && $0 != .dock && $0 != .unknown && $0 != .vendor }
             )
             if families.count >= 3 { category = .dock }
+        }
+        // A device publishing a serial port IS a serial device to the user
+        // (CDC-ACM is class 0x02, which would otherwise read as network).
+        if serialOwners.contains(Registry.entryID(of: entry)), category != .hub, category != .dock {
+            category = .serial
         }
         var (name, subtitle) = displayName(props: props, registryName: registryName)
         // Port number on the parent = last nibble of the locationID path.
@@ -232,8 +241,14 @@ public enum USBTopologyBuilder {
                 let hidChildren = Registry.children(of: child, plane: "IOService")
                 defer { hidChildren.forEach { IOObjectRelease($0) } }
                 for hidChild in hidChildren {
-                    if let pairs = Registry.properties(of: hidChild)["DeviceUsagePairs"] {
+                    let hidProps = Registry.properties(of: hidChild)
+                    if let pairs = hidProps["DeviceUsagePairs"] {
                         props["DeviceUsagePairs"] = pairs
+                        // The raw HID report descriptor (registry copy —
+                        // read without touching the device).
+                        if let descriptor = hidProps["ReportDescriptor"] {
+                            props["ReportDescriptor"] = descriptor
+                        }
                         break
                     }
                 }

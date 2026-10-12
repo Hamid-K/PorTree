@@ -48,6 +48,7 @@ extension DeviceCategory {
         case .display: return "display"
         case .printer: return "printer"
         case .smartCard: return "creditcard"
+        case .serial: return "terminal"
         case .wireless: return "dot.radiowaves.left.and.right"
         case .tbSwitch: return "bolt.horizontal"
         case .tbDomain: return "bolt.horizontal.circle"
@@ -75,6 +76,7 @@ extension DeviceCategory {
         case .display: return "Displays"
         case .printer: return "Printers"
         case .smartCard: return "Smart cards"
+        case .serial: return "Serial ports"
         case .wireless: return "Wireless"
         case .tbSwitch: return "Thunderbolt devices"
         case .tbDomain: return "Thunderbolt domains"
@@ -89,7 +91,7 @@ extension DeviceCategory {
     /// Fixed presentation order for the by-type sidebar (interesting device
     /// families first, infrastructure last).
     static let typeOrder: [DeviceCategory] = [
-        .display, .hid, .mouse, .storage, .video, .audio, .speaker, .network,
+        .display, .hid, .mouse, .storage, .serial, .video, .audio, .speaker, .network,
         .wireless, .printer, .smartCard, .dock, .adapter, .vendor, .unknown,
         .hub, .tbSwitch, .tbDomain, .controller, .pci,
     ]

@@ -713,6 +713,7 @@ private struct EdgeCanvas: View {
 private struct NodeCard: View {
     @Environment(AppStore.self) private var store
     @Environment(\.zoomScale) private var z
+    @Environment(\.openWindow) private var openWindow
     let node: DeviceNode
     let height: CGFloat
     let collapsedCount: Int
@@ -872,6 +873,11 @@ private struct NodeCard: View {
             }
             Button(store.expandedTags.contains(node.id) ? "Collapse tags" : "Expand tags") {
                 store.toggleTagExpansion(node.id)
+            }
+            ForEach(store.serialPorts(for: node)) { port in
+                Button("Open Serial Console — \((port.calloutPath as NSString).lastPathComponent)") {
+                    openWindow(id: "serial", value: port.calloutPath)
+                }
             }
             if node.kind == .usbDevice {
                 Divider()
@@ -1165,6 +1171,10 @@ enum TagList {
         }
         if let gfx = node.usbGraphicsVendor {
             tags.append(Tag(text: verbose ? "USB graphics · \(gfx)" : gfx, color: .pink))
+        }
+        for port in store.serialPorts(for: node) {
+            let name = (port.calloutPath as NSString).lastPathComponent
+            tags.append(Tag(text: verbose ? "serial \(port.calloutPath)" : "⌁ \(name)", color: .green))
         }
         if node.isBillboard {
             tags.append(Tag(text: verbose ? "USB-C alt-mode adapter (billboard)" : "alt-mode adapter", color: .orange))

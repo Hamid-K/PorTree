@@ -7,6 +7,7 @@ import PortreeCore
 /// sync with the graph.
 struct OutlineView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         @Bindable var store = store
@@ -78,6 +79,11 @@ struct OutlineView: View {
                 if store.untrustedIDs.contains(id) {
                     Button("Trust this device") { store.trustDevice(node) }
                     Divider()
+                }
+                ForEach(store.serialPorts(for: node)) { port in
+                    Button("Open Serial Console — \((port.calloutPath as NSString).lastPathComponent)") {
+                        openWindow(id: "serial", value: port.calloutPath)
+                    }
                 }
                 if node.kind == .usbDevice {
                     Button(node.hasStorageInterface

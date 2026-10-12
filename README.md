@@ -31,6 +31,8 @@ Selected-device detail — live I/O while recording, camera capability, power al
 | Host summary | Measured from the registry: TB generation and per-port bandwidth, port count, USB controller count/revision, active DP tunnels; reference-table chip specs (max displays) where known, with an explicit note when a chip has no entry |
 | Tags | Every fact a node carries as readable chips: compact row with +N overflow on cards (expandable per card or all at once), the full set mirrored large in the inspector |
 | Identify | One click searches the web for the selected device's `vid:pid` + name — the fastest "what is this thing" for unknowns; right-click copies the device name or canonical ID (USB vid:pid, PCI vendor:device, TB UID). HID devices are classified by their **usage tables**, not just class 3 — a hub controller's vendor-usage HID-I2C bridge shows as a controller with an honest "bridge/config, not an input device" interface label, never as a keyboard |
+| HID descriptors | Every HID interface's **report descriptor**, decoded from the registry (never read from the device): per-report input/output/feature sizes, the full indented item listing, copyable raw hex. Vendor-defined functions get a "vendor bridge / configuration interface" banner with a one-click search for the chip vendor's documentation and tools |
+| Serial console | Any USB device that publishes a serial port — CDC-ACM boards, FTDI, CP210x, CH34x, PL2303 bridges — is detected **generically** from its `IOSerialBSDClient` (no vendor tables), tagged with its `/dev/cu.*` path, and listed under **Serial ports** in the Types sidebar. Right-click → **Open Serial Console**: baud up to 1 Mbaud (8N1), line-ending choice, hex view + hex input, RX/TX counters, and a **timestamped transcript** (direction, size, hex, ASCII) you can save. One session per port |
 | Device control | Right-click → **Re-enumerate (unplug/replug)**: a software reset via IOUSBHostDevice that terminates and re-enumerates the device — watch it ghost and re-arrive. Works unprivileged for interface-driven devices; hubs refuse (their driver holds them — stated honestly), and storage devices warn that it ejects them |
 | Device guard | On by default: the first run learns every attached device as the trusted baseline; afterwards any **never-seen device** is flagged red in graph + sidebar with a distinct alert sound and log entry until you right-click → *Trust this device* (or *Trust All Connected Devices*). Serial-less devices keep trust across port moves, but a serial-less clone of a serial-bearing known device does **not** pass |
 | Connection sounds | Optional beeps: plug/unplug, alerts (overcurrent, new keyboard-class device, unknown device) — one beep per event batch, toggleable |
@@ -68,6 +70,8 @@ Feature rows extend the comparison table on the Hubble product page. [Hubble](ht
 | PD power contracts + live input power | ✓ | – | – | – | partial | raw |
 | Baseline snapshot diff | ✓ | – | – | – | – | – |
 | Unknown-device guard (trusted baseline, BadUSB heuristics) | ✓ | – | – | – | – | – |
+| Built-in serial console for USB serial devices | ✓ | – | – | – | – | – |
+| HID report-descriptor decode | ✓ | – | – | – | – | raw |
 | Persisted event log | ✓ | – | – | – | – | – |
 | Web device identification | ✓ | ✓ | – | – | – | – |
 | Headless CLI (JSON / images) | ✓ | – | – | – | partial | ✓ |

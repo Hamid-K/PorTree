@@ -1272,6 +1272,31 @@ final class AppStore {
         appendEvent(EventRow(kind: .info, title: "Web search opened", detail: query, nodeID: node.id))
     }
 
+    /// Serial ports (/dev/cu.*) owned by this USB device — generic: any
+    /// driver that publishes an IOSerialBSDClient under it.
+    func serialPorts(for node: DeviceNode) -> [SerialPort] {
+        guard node.kind == .usbDevice else { return [] }
+        return snapshot?.serialPorts.filter { $0.usbEntryID == node.id } ?? []
+    }
+
+    /// Vendor documentation lookup for a device exposing a vendor-defined
+    /// interface: the chip vendor's datasheet and configuration tool are
+    /// the right place to interact with it.
+    func searchVendorDocumentation(for node: DeviceNode) {
+        var terms: [String] = []
+        if let vid = node.vendorID, let pid = node.productID {
+            terms.append(String(format: "%04llx:%04llx", vid, pid))
+        }
+        if let vendor = node.properties["USB Vendor Name"]?.stringValue { terms.append(vendor) }
+        terms.append("\"\(node.name)\"")
+        terms.append("datasheet configuration tool")
+        let query = terms.joined(separator: " ")
+        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://www.google.com/search?q=\(encoded)") else { return }
+        NSWorkspace.shared.open(url)
+        appendEvent(EventRow(kind: .info, title: "Vendor documentation search opened", detail: query, nodeID: node.id))
+    }
+
     /// Raw USB packet capture does not exist on modern macOS (the XHC20 tap
     /// died with Catalina and never reached Apple Silicon) — the working path
     /// is usbmon inside a Linux VM with the device passed through, or a

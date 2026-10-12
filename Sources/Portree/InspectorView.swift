@@ -89,6 +89,7 @@ struct InspectorView: View {
 
 private struct DecodedTab: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
     let node: DeviceNode
 
     var body: some View {
@@ -157,6 +158,22 @@ private struct DecodedTab: View {
                     row("NVM version", Format.nvmVersion(rom: rom, eeprom: eeprom))
                 }
                 row("Tunneled", node.isTunneled ? "Yes (USB4/TB tunnel)" : (node.kind == .tbSwitch ? "native fabric" : "No"))
+            }
+            let serialPorts = store.serialPorts(for: node)
+            if !serialPorts.isEmpty {
+                group("Serial") {
+                    ForEach(serialPorts) { port in
+                        row("Port", port.calloutPath)
+                        if let driver = port.driverClass { row("Driver", driver) }
+                        Button {
+                            openWindow(id: "serial", value: port.calloutPath)
+                        } label: {
+                            Label("Open Serial Console", systemImage: "terminal")
+                        }
+                        .appFont(11)
+                        .padding(.top, 2)
+                    }
+                }
             }
             if let link = store.portLink(for: node) {
                 group("Cable — \(link.portType) \(link.portNumber)") {
@@ -310,7 +327,14 @@ private struct RawTab: View {
 // MARK: - Interfaces
 
 private struct InterfacesTab: View {
+    @Environment(AppStore.self) private var store
     let node: DeviceNode
+
+    private var hasVendorBridge: Bool {
+        node.interfaces.contains { entry in
+            entry.properties["ReportDescriptor"]?.dataValue.map { HIDDescriptor($0).vendorDefined } ?? false
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -323,12 +347,35 @@ private struct InterfacesTab: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 24)
             }
+            if hasVendorBridge {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Vendor bridge / configuration interface", systemImage: "wrench.adjustable")
+                        .appFont(11.5, weight: .semibold)
+                        .foregroundStyle(.orange)
+                    Text("This device exposes a vendor-defined HID function. It is not an input device, and its command protocol belongs to the chip vendor. Use the vendor's own configuration tool to interact with it.")
+                        .appFont(10.5)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button {
+                        store.searchVendorDocumentation(for: node)
+                    } label: {
+                        Label("Find vendor documentation & tools", systemImage: "doc.text.magnifyingglass")
+                    }
+                    .appFont(11)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+            }
             ForEach(node.interfaces) { entry in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.title).appFont(11.5, weight: .semibold)
                     Text(entry.detail)
                         .appFont(10.5)
                         .foregroundStyle(.secondary)
+                    if let raw = entry.properties["ReportDescriptor"]?.dataValue {
+                        ReportDescriptorView(raw: raw)
+                    }
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -337,6 +384,60 @@ private struct InterfacesTab: View {
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 16)
+    }
+}
+
+/// Decoded HID report descriptor: per-report sizes up top, the full item
+/// listing in a disclosure group, and copyable raw hex.
+private struct ReportDescriptorView: View {
+    let raw: Data
+    @State private var expanded = false
+
+    var body: some View {
+        let decoded = HIDDescriptor(raw)
+        DisclosureGroup(isExpanded: $expanded) {
+            VStack(alignment: .leading, spacing: 1) {
+                ForEach(Array(decoded.lines.enumerated()), id: \.offset) { _, line in
+                    Text(String(repeating: "  ", count: line.depth) + line.text)
+                        .font(.system(size: 10, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                Button("Copy raw descriptor (hex)") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(
+                        raw.map { String(format: "%02x", $0) }.joined(separator: " "),
+                        forType: .string
+                    )
+                }
+                .appFont(10)
+                .padding(.top, 4)
+            }
+            .padding(.top, 4)
+        } label: {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Report descriptor · \(raw.count) B")
+                    .appFont(10.5, weight: .medium)
+                ForEach(decoded.reports, id: \.reportID) { report in
+                    Text(summary(report))
+                        .appFont(9.5)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private func summary(_ report: HIDDescriptor.ReportSummary) -> String {
+        var parts: [String] = []
+        if report.inputBits > 0 { parts.append("in \(bytes(report.inputBits))") }
+        if report.outputBits > 0 { parts.append("out \(bytes(report.outputBits))") }
+        if report.featureBits > 0 { parts.append("feature \(bytes(report.featureBits))") }
+        let id = report.reportID == 0 ? "no report ID" : String(format: "report 0x%02X", report.reportID)
+        return "\(id): " + parts.joined(separator: " · ")
+    }
+
+    private func bytes(_ bits: Int) -> String {
+        bits % 8 == 0 ? "\(bits / 8) B" : "\(bits) bit"
     }
 }
 

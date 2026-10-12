@@ -116,6 +116,33 @@ public struct Redactor {
         )
     }
 
+    /// Port names can embed the device serial (/dev/cu.usbserial-A10KXYZ,
+    /// usbmodem<serial>): keep the driver's prefix, randomize the rest —
+    /// consistently, so cu./tty. twins still pair up.
+    private mutating func redactPortName(_ name: String) -> String {
+        let prefixes = ["usbserial-", "usbmodem", "wchusbserial", "SLAB_USBtoUART"]
+        let keep = prefixes.first { name.hasPrefix($0) } ?? ""
+        let rest = String(name.dropFirst(keep.count))
+        return keep + (rest.isEmpty ? "" : randomString(like: rest))
+    }
+
+    private mutating func redactPortPath(_ path: String) -> String {
+        guard let dot = path.firstIndex(of: ".") else { return path }
+        return String(path[...dot]) + redactPortName(String(path[path.index(after: dot)...]))
+    }
+
+    private mutating func redact(_ port: SerialPort) -> SerialPort {
+        // Built-in ports (debug-console, Bluetooth) identify nothing.
+        guard port.usbEntryID != nil else { return port }
+        return SerialPort(
+            calloutPath: redactPortPath(port.calloutPath),
+            dialinPath: port.dialinPath.map { redactPortPath($0) },
+            baseName: redactPortName(port.baseName),
+            usbEntryID: port.usbEntryID,
+            driverClass: port.driverClass
+        )
+    }
+
     public mutating func redact(_ snapshot: Snapshot) -> Snapshot {
         Snapshot(
             usbRoots: snapshot.usbRoots.map { redact($0) },
@@ -125,6 +152,7 @@ public struct Redactor {
             displaySinks: snapshot.displaySinks.map { redact($0) },
             portLinks: snapshot.portLinks.map { redact($0) },
             power: snapshot.power,
+            serialPorts: snapshot.serialPorts.map { redact($0) },
             redacted: true,
             takenAt: snapshot.takenAt
         )

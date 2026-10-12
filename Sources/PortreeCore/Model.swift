@@ -13,6 +13,9 @@ public enum NodeKind: String, Sendable, Codable, Hashable {
 public enum DeviceCategory: String, Sendable, Codable, Hashable {
     case controller, hub, dock, hid, mouse, storage, audio, speaker, video, network, display
     case printer, smartCard, wireless, tbSwitch, tbDomain, adapter, vendor, unknown, pci, system
+    /// Exposes a serial port (CDC-ACM or a UART bridge) — detected from the
+    /// IOSerialBSDClient node, never from vendor IDs.
+    case serial
 }
 
 /// A secondary detail row under a node: a USB interface, or a Thunderbolt
@@ -244,6 +247,8 @@ public struct Snapshot: Sendable, Codable {
     public let portLinks: [PortLink]
     /// The Mac's power-input state (adapter contract, live input watts).
     public let power: PowerInfo?
+    /// Every serial port macOS publishes (USB-owned and built-in).
+    public let serialPorts: [SerialPort]
     /// True when identity values in this snapshot were randomized for
     /// sharing (Redactor). Loaders must not validate device identities
     /// against it — the guard and identity-keyed diffs would scream over
@@ -259,6 +264,7 @@ public struct Snapshot: Sendable, Codable {
         displaySinks: [DisplaySink] = [],
         portLinks: [PortLink] = [],
         power: PowerInfo? = nil,
+        serialPorts: [SerialPort] = [],
         redacted: Bool = false,
         takenAt: Date = Date()
     ) {
@@ -269,6 +275,7 @@ public struct Snapshot: Sendable, Codable {
         self.displaySinks = displaySinks
         self.portLinks = portLinks
         self.power = power
+        self.serialPorts = serialPorts
         self.redacted = redacted
         self.takenAt = takenAt
     }
@@ -284,6 +291,7 @@ public struct Snapshot: Sendable, Codable {
         displaySinks = try container.decodeIfPresent([DisplaySink].self, forKey: .displaySinks) ?? []
         portLinks = try container.decodeIfPresent([PortLink].self, forKey: .portLinks) ?? []
         power = try container.decodeIfPresent(PowerInfo.self, forKey: .power)
+        serialPorts = try container.decodeIfPresent([SerialPort].self, forKey: .serialPorts) ?? []
         redacted = try container.decodeIfPresent(Bool.self, forKey: .redacted) ?? false
         takenAt = try container.decodeIfPresent(Date.self, forKey: .takenAt) ?? Date()
     }
@@ -347,7 +355,8 @@ public struct Snapshot: Sendable, Codable {
             systemNode: system,
             displaySinks: DisplaySinks.enumerate(),
             portLinks: PortsReader.enumerate(),
-            power: PowerReader.read()
+            power: PowerReader.read(),
+            serialPorts: SerialPorts.enumerate()
         )
     }
 

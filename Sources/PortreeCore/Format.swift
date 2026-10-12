@@ -34,6 +34,24 @@ public enum Format {
         return labels.isEmpty ? nil : Set(labels).sorted().joined(separator: " · ")
     }
 
+    /// Parses typed hex bytes ("0d 0a ff", "0x0D,0x0A", "deadbeef") for the
+    /// serial console's hex mode. Nil on odd digit counts or non-hex input.
+    public static func parseHexBytes(_ input: String) -> Data? {
+        let digits = input.replacingOccurrences(of: "0x", with: "")
+            .replacingOccurrences(of: "0X", with: "")
+            .filter { !$0.isWhitespace && $0 != "," }
+        guard !digits.isEmpty, digits.count % 2 == 0 else { return nil }
+        var data = Data()
+        var index = digits.startIndex
+        while index < digits.endIndex {
+            let next = digits.index(index, offsetBy: 2)
+            guard let byte = UInt8(digits[index..<next], radix: 16) else { return nil }
+            data.append(byte)
+            index = next
+        }
+        return data
+    }
+
     /// Numeric semver comparison for release tags ("v1.2.0", "1.10.3").
     /// Returns negative when a < b, 0 when equal, positive when a > b.
     /// Non-numeric components compare as 0 — honest fallback, never a crash.
