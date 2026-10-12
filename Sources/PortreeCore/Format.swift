@@ -27,7 +27,7 @@ public enum Format {
             case (0x0C, _): return "HID: consumer control"
             case (0x0D, _): return "HID: digitizer"
             case (let p, let u) where p == 0xFF || p >= 0xFF00:
-                return "HID: vendor-defined (\(hex(p)):\(u)) — bridge/config, not an input device"
+                return "HID: vendor-defined (\(hex(p)):\(u)) — vendor command channel, not an input"
             default: return "HID: page \(hex(page)) usage \(usage)"
             }
         }

@@ -118,21 +118,35 @@ struct OutlineView: View {
     /// Flat device-type filter: one section per category present, rows
     /// spotlight their device in the graph (same fade-out as search).
     private var typesList: some View {
-        let byCategory = Dictionary(grouping: store.allNodes.values.filter { node in
+        // Same search as the tree: device rows show only matches; rows that
+        // aren't devices (displays, cables, power) match on their own text
+        // or on the device they link to. Empty sections disappear.
+        let search = store.searchResult
+        let query = store.searchText.trimmingCharacters(in: .whitespaces).lowercased()
+        func textMatches(_ texts: [String], linked nodeID: UInt64?) -> Bool {
+            guard let search else { return true }
+            if let nodeID, search.matches.contains(nodeID) { return true }
+            return texts.contains { $0.lowercased().contains(query) }
+        }
+        let nodes = store.allNodes.values.filter { node in
             node.kind != .system && !store.ghostIDs.contains(node.id)
-        }) { store.effectiveCategory(of: $0) }
+                && (search?.matches.contains(node.id) ?? true)
+        }
+        let byCategory = Dictionary(grouping: nodes) { store.effectiveCategory(of: $0) }
+        let displays = store.displayEntries.filter { textMatches([$0.name, $0.detail, "display"], linked: $0.nodeID) }
+        let bridges = nodes.filter { $0.bridgeInfo != nil }.sorted { $0.name < $1.name }
+        let cables = store.cableEntries.filter { textMatches([$0.portLabel, $0.detail, "cable"], linked: $0.nodeID) }
+        let power = store.powerRows.filter { textMatches([$0.title, $0.detail, "power"], linked: $0.nodeID) }
+        let nothing = displays.isEmpty && cables.isEmpty && power.isEmpty && nodes.isEmpty
 
         return List {
-            if !store.displayEntries.isEmpty {
+            if !displays.isEmpty {
                 Section("Displays") {
-                    ForEach(store.displayEntries) { entry in
+                    ForEach(displays) { entry in
                         DisplayEntryRow(entry: entry)
                     }
                 }
             }
-            let bridges = store.allNodes.values
-                .filter { $0.bridgeInfo != nil && !store.ghostIDs.contains($0.id) }
-                .sorted { $0.name < $1.name }
             if !bridges.isEmpty {
                 Section("Bridges") {
                     ForEach(bridges) { node in
@@ -140,16 +154,16 @@ struct OutlineView: View {
                     }
                 }
             }
-            if !store.cableEntries.isEmpty {
+            if !cables.isEmpty {
                 Section("Cables & Ports") {
-                    ForEach(store.cableEntries) { entry in
+                    ForEach(cables) { entry in
                         CableEntryRow(entry: entry)
                     }
                 }
             }
-            if !store.powerRows.isEmpty {
+            if !power.isEmpty {
                 Section("Power") {
-                    ForEach(store.powerRows) { row in
+                    ForEach(power) { row in
                         PowerEntryRow(row: row)
                     }
                 }
@@ -165,6 +179,11 @@ struct OutlineView: View {
             }
         }
         .listStyle(.sidebar)
+        .overlay {
+            if search != nil, nothing {
+                ContentUnavailableView.search(text: store.searchText)
+            }
+        }
     }
 }
 

@@ -1038,17 +1038,36 @@ final class AppStore {
     // MARK: Search
 
     /// IDs matching the query, plus every ancestor (so the tree keeps shape).
+    /// Everything a card or the inspector shows about a node, lowercased —
+    /// search what you can see: interface names ("HID I2C"), bridge labels,
+    /// serial-port paths, tags, the type it's listed under, and IDs.
+    func searchHaystack(for node: DeviceNode) -> String {
+        var parts = [node.name, node.subtitle, node.className, effectiveCategory(of: node).typeLabel]
+        if let serial = node.serialNumber { parts.append(serial) }
+        if let idPair = node.idPairLabel { parts.append(idPair) }
+        if let vid = node.vendorID, let pid = node.productID {
+            parts.append(String(format: "%04llx:%04llx", vid, pid))
+        }
+        for entry in node.interfaces {
+            parts.append(entry.title)
+            parts.append(entry.detail)
+        }
+        if let bridge = node.bridgeInfo {
+            parts.append(bridge.label)
+            parts.append(bridge.compactLabel)
+            parts.append("bridge")
+        }
+        parts += serialPorts(for: node).map(\.calloutPath)
+        parts += TagList.tags(node: node, store: self, verbose: true).map(\.text)
+        return parts.joined(separator: " ").lowercased()
+    }
+
     var searchResult: (matches: Set<UInt64>, visible: Set<UInt64>)? {
         let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return nil }
         var matches: Set<UInt64> = []
-        for node in allNodes.values {
-            var haystack = "\(node.name) \(node.subtitle) \(node.className)"
-            if let serial = node.serialNumber { haystack += " \(serial)" }
-            if let vid = node.vendorID, let pid = node.productID {
-                haystack += " \(Format.hex(vid, width: 4)):\(Format.hex(pid, width: 4))"
-            }
-            if haystack.lowercased().contains(query) { matches.insert(node.id) }
+        for node in allNodes.values where searchHaystack(for: node).contains(query) {
+            matches.insert(node.id)
         }
         var visible = matches
         for id in matches {
