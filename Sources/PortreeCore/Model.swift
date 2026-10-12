@@ -47,6 +47,43 @@ public struct SubEntry: Sendable, Hashable, Codable, Identifiable {
     }
 }
 
+/// A USB-to-X bridge (I2C, SMBus, SPI, UART) and the evidence behind it.
+public struct BridgeInfo: Sendable, Hashable {
+    public let buses: [String]
+    /// Set when identified by a documented bridge chip's vid:pid; nil when
+    /// the bus comes from the interface's own name.
+    public let chip: String?
+
+    public var busLabel: String { buses.joined(separator: "/") + " bridge" }
+    public var label: String {
+        busLabel + (chip.map { " (\($0))" } ?? " (per interface name)")
+    }
+
+    /// Documented single-purpose USB bridge chips — the vid:pid alone
+    /// proves what the device is. Key: vid << 16 | pid.
+    static let knownChips: [Int64: (name: String, buses: [String])] = [
+        0x10C4_EA90: ("Silicon Labs CP2112", ["SMBus", "I2C"]),
+        0x0403_6030: ("FTDI FT260", ["I2C", "UART"]),
+        0x04D8_00DD: ("Microchip MCP2221", ["I2C", "UART"]),
+        0x04D8_00DE: ("Microchip MCP2210", ["SPI"]),
+        0x1A86_5512: ("WCH CH341", ["I2C", "SPI"]),
+    ]
+
+    /// Bus names spelled as whole words in a vendor's interface name.
+    static func busNames(in name: String) -> [String] {
+        let words = Set(name.uppercased()
+            .replacingOccurrences(of: "²", with: "2")
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init))
+        var found: [String] = []
+        if words.contains("I2C") || words.contains("IIC") { found.append("I2C") }
+        if words.contains("SMBUS") { found.append("SMBus") }
+        if words.contains("SPI") { found.append("SPI") }
+        if words.contains("UART") { found.append("UART") }
+        return found
+    }
+}
+
 /// Info about a merged USB2/USB3 hub twin (one physical hub, two logical
 /// personalities paired by kUSBContainerID). The USB3 personality's registry
 /// entry ID is canonical; the USB2 twin lives on as `secondaryID`.
@@ -187,6 +224,26 @@ extension DeviceNode {
     /// are deliberately NOT matched (no guessed labels).
     public var usbGraphicsVendor: String? {
         vendorID == 0x17E9 ? "DisplayLink" : nil
+    }
+
+    /// What bus a USB-to-X bridge exposes, and how we know. Two honest
+    /// sources only: a documented single-purpose bridge chip (vid:pid is
+    /// proof), or a vendor-defined interface whose OWN name says which bus
+    /// it bridges (as strong as the vendor's naming — labeled as such).
+    public var bridgeInfo: BridgeInfo? {
+        if let vid = vendorID, let pid = productID, let chip = BridgeInfo.knownChips[vid << 16 | pid] {
+            return BridgeInfo(buses: chip.buses, chip: chip.name)
+        }
+        var buses: [String] = []
+        for entry in interfaces {
+            let cls = entry.properties["bInterfaceClass"]?.intValue
+            let pairs = SubEntry.hidUsagePairs(of: [entry])
+            let vendorHID = cls == 3 && !pairs.isEmpty && pairs.allSatisfy { $0.page == 0xFF || $0.page >= 0xFF00 }
+            guard vendorHID || cls == 0xFF,
+                  let name = entry.properties["Portree InterfaceName"]?.stringValue else { continue }
+            for bus in BridgeInfo.busNames(in: name) where !buses.contains(bus) { buses.append(bus) }
+        }
+        return buses.isEmpty ? nil : BridgeInfo(buses: buses, chip: nil)
     }
 
     /// USB billboard device (class 0x11): a USB-C alt-mode adapter

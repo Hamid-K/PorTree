@@ -91,24 +91,62 @@ struct UpdatePanel: View {
         }
     }
 
+    /// The notes area has a FIXED height: a scroll view with only a maximum
+    /// collapses to a sliver when the popover is measured before its toolbar
+    /// anchor has laid out (auto-open at launch), hiding the notes entirely.
     private func changelog(_ release: UpdateChecker.Release) -> some View {
         ScrollView {
-            Text(renderedChangelog(release.changelog))
-                .appFont(11)
+            ReleaseNotesView(markdown: release.changelog)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
+                .padding(10)
         }
-        .frame(maxHeight: 280)
-        .padding(10)
+        .frame(height: 260)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
     }
+}
 
-    /// GitHub release notes are markdown; inline-only parsing keeps the
-    /// line structure (headings/bullets stay readable as plain lines).
-    private func renderedChangelog(_ markdown: String) -> AttributedString {
+/// Markdown release notes as real blocks: bold headings, bulleted items,
+/// muted quotes, wrapped paragraphs — inline bold/code/links preserved.
+struct ReleaseNotesView: View {
+    let markdown: String
+
+    var body: some View {
+        let blocks = ReleaseNotes.blocks(markdown)
+        VStack(alignment: .leading, spacing: 5) {
+            if blocks.isEmpty {
+                Text("No release notes for this version.")
+                    .appFont(11)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                switch block {
+                case .heading(let text):
+                    Text(inline(text))
+                        .appFont(12, weight: .semibold)
+                        .padding(.top, index == 0 ? 0 : 6)
+                case .bullet(let text):
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("•").appFont(11).foregroundStyle(.secondary)
+                        Text(inline(text)).appFont(11)
+                    }
+                case .quote(let text):
+                    Text(inline(text))
+                        .appFont(10.5)
+                        .italic()
+                        .foregroundStyle(.secondary)
+                case .paragraph(let text):
+                    Text(inline(text)).appFont(11)
+                }
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .textSelection(.enabled)
+    }
+
+    private func inline(_ text: String) -> AttributedString {
         (try? AttributedString(
-            markdown: markdown,
+            markdown: text,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(markdown)
+        )) ?? AttributedString(text)
     }
 }

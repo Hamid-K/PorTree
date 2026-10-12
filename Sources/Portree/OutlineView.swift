@@ -130,6 +130,16 @@ struct OutlineView: View {
                     }
                 }
             }
+            let bridges = store.allNodes.values
+                .filter { $0.bridgeInfo != nil && !store.ghostIDs.contains($0.id) }
+                .sorted { $0.name < $1.name }
+            if !bridges.isEmpty {
+                Section("Bridges") {
+                    ForEach(bridges) { node in
+                        TypeRow(node: node)
+                    }
+                }
+            }
             if !store.cableEntries.isEmpty {
                 Section("Cables & Ports") {
                     ForEach(store.cableEntries) { entry in

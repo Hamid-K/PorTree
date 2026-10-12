@@ -331,7 +331,8 @@ private struct InterfacesTab: View {
     let node: DeviceNode
 
     private var hasVendorBridge: Bool {
-        node.interfaces.contains { entry in
+        if node.bridgeInfo != nil { return true }
+        return node.interfaces.contains { entry in
             entry.properties["ReportDescriptor"]?.dataValue.map { HIDDescriptor($0).vendorDefined } ?? false
         }
     }
@@ -349,7 +350,7 @@ private struct InterfacesTab: View {
             }
             if hasVendorBridge {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("Vendor bridge / configuration interface", systemImage: "wrench.adjustable")
+                    Label(node.bridgeInfo?.label ?? "Vendor bridge / configuration interface", systemImage: "wrench.adjustable")
                         .appFont(11.5, weight: .semibold)
                         .foregroundStyle(.orange)
                     Text("This device exposes a vendor-defined HID function. It is not an input device, and its command protocol belongs to the chip vendor. Use the vendor's own configuration tool to interact with it.")

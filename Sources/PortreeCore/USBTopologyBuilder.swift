@@ -233,6 +233,11 @@ public enum USBTopologyBuilder {
             let proto = props["bInterfaceProtocol"]?.intValue ?? 0
             let endpoints = props["bNumEndpoints"]?.intValue ?? 0
             let ifName = props["kUSBString"]?.stringValue ?? Registry.name(of: child)
+            // The interface's own name (its USB string descriptor, or the
+            // registry name derived from it) — kept for bridge labeling.
+            if !ifName.isEmpty, ifName != "IOUSBHostInterface" {
+                props["Portree InterfaceName"] = .string(ifName)
+            }
             // HID interfaces: pull the HID driver child's DeviceUsagePairs up
             // onto the interface — the usage page is what separates a real
             // keyboard from a vendor bridge (hub controllers expose HID-I2C
