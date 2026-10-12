@@ -62,6 +62,23 @@ struct UpdatePanel: View {
                 Button("Reveal Download") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                     .appFont(11.5)
 
+            case .awaitingBuild(let release):
+                header(release)
+                changelog(release)
+                Label("The \(release.version) build is still being published. Try again in a minute.", systemImage: "clock.arrow.circlepath")
+                    .appFont(11.5)
+                    .foregroundStyle(.orange)
+                HStack(spacing: 8) {
+                    Button {
+                        updates.downloadAndInstall(release)
+                    } label: {
+                        Label("Retry Download & Install", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button("View on GitHub") { NSWorkspace.shared.open(release.htmlURL) }
+                }
+                .appFont(11.5)
+
             case .installedAwaitingRelaunch(let release):
                 header(release)
                 Label("Updated — the new version starts on next launch.", systemImage: "checkmark.seal.fill")

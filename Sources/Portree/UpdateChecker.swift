@@ -39,6 +39,7 @@ final class UpdateChecker {
         case installing(Release)
         case readyManual(Release, downloadedAt: URL)  // dev binary / translocated: no self-replace
         case installedAwaitingRelaunch(Release)       // swap done, auto-relaunch failed
+        case awaitingBuild(Release)                   // release public, zip not attached yet
         case failed(String)
     }
 
@@ -66,7 +67,7 @@ final class UpdateChecker {
     /// say (never for silent up-to-date auto-checks).
     var hasNews: Bool {
         switch state {
-        case .available, .downloading, .installing, .readyManual, .installedAwaitingRelaunch: return true
+        case .available, .downloading, .installing, .readyManual, .installedAwaitingRelaunch, .awaitingBuild: return true
         case .failed: return lastCheckManual
         case .idle, .checking, .upToDate: return false
         }
@@ -194,7 +195,19 @@ final class UpdateChecker {
     /// stated honestly rather than pretended otherwise.
     func downloadAndInstall(_ release: Release) {
         guard let assetURL = release.assetURL else {
-            NSWorkspace.shared.open(release.htmlURL)
+            // A release can be public before CI has attached its build. Ask
+            // GitHub again instead of punting the user to a web page: if the
+            // zip is there now, install in place; if not, say so and offer a
+            // retry.
+            Task {
+                await check(manual: true)
+                guard case .available(let fresh) = state else { return }
+                if fresh.assetURL != nil {
+                    downloadAndInstall(fresh)
+                } else {
+                    state = .awaitingBuild(fresh)
+                }
+            }
             return
         }
         state = .downloading(release, progress: 0)
