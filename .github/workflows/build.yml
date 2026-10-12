@@ -70,7 +70,7 @@ jobs:
               --notes "Rolling build of the latest main. Ad-hoc signed — right-click → Open on first launch."
           cp dist/PorTree-*.zip dist/PorTree-nightly.zip
           gh release upload nightly dist/PorTree-nightly.zip --clobber
-          gh release edit nightly --notes "Rolling build of main @ ${GITHUB_SHA::7} ($(date -u +%Y-%m-%dT%H:%MZ)). Ad-hoc signed — right-click → Open on first launch."
+          gh release edit nightly --draft=false --prerelease --notes "Rolling build of main @ ${GITHUB_SHA::7} ($(date -u +%Y-%m-%dT%H:%MZ)). Ad-hoc signed — right-click → Open on first launch."
 
       # Versioned releases: pushing a v* tag publishes a real release.
       - name: Publish tagged release
