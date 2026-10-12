@@ -93,6 +93,7 @@ struct OutlineView: View {
                     }
                     Divider()
                 }
+                DebugInfoMenu(node: node)
                 Button("Copy device name") { copyToPasteboard(node.name) }
                 if let idPair = node.idPairLabel {
                     Button("Copy device ID") { copyToPasteboard(idPair) }
@@ -336,6 +337,7 @@ private struct TypeRow: View {
                 Button("Trust this device") { store.trustDevice(node) }
                 Divider()
             }
+            DebugInfoMenu(node: node)
             Button("Copy device name") { copyToPasteboard(node.name) }
             if let idPair = node.idPairLabel {
                 Button("Copy device ID") { copyToPasteboard(idPair) }

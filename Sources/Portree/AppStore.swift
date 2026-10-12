@@ -1298,6 +1298,50 @@ final class AppStore {
         return snapshot?.serialPorts.filter { $0.usbEntryID == node.id } ?? []
     }
 
+    // MARK: Read-only debug dumps (registry copies — never touch the device)
+
+    /// The node's full registry record (properties + interfaces) as JSON on
+    /// the clipboard; masked when privacy mode is on.
+    func copyRawProperties(of node: DeviceNode) {
+        var record = node
+        record.children = []
+        if redactExports {
+            record = Snapshot(usbRoots: [record], tbRoots: []).redactedCopy().usbRoots[0]
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(record), let text = String(data: data, encoding: .utf8) else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        appendEvent(EventRow(
+            kind: .export,
+            title: "Copied registry properties — \(node.name)",
+            detail: redactExports ? "identifiers masked" : "\(data.count) bytes of JSON",
+            nodeID: node.id
+        ))
+    }
+
+    /// Every HID report descriptor on the node: raw hex plus the decoded
+    /// item listing, per interface.
+    func copyReportDescriptors(of node: DeviceNode) {
+        let blocks = node.interfaces.compactMap { entry -> String? in
+            guard let raw = entry.properties["ReportDescriptor"]?.dataValue else { return nil }
+            let decoded = HIDDescriptor(raw)
+            var lines = ["# \(entry.title) — \(raw.count) B", raw.map { String(format: "%02x", $0) }.joined(separator: " "), ""]
+            lines += decoded.lines.map { String(repeating: "  ", count: $0.depth) + $0.text }
+            return lines.joined(separator: "\n")
+        }
+        guard !blocks.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(blocks.joined(separator: "\n\n"), forType: .string)
+        appendEvent(EventRow(
+            kind: .export,
+            title: "Copied HID report descriptors — \(node.name)",
+            detail: "\(blocks.count) interface\(blocks.count == 1 ? "" : "s")",
+            nodeID: node.id
+        ))
+    }
+
     /// Vendor documentation lookup for a device exposing a vendor-defined
     /// interface: the chip vendor's datasheet and configuration tool are
     /// the right place to interact with it.

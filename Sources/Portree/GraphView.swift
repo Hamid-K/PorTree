@@ -888,6 +888,7 @@ private struct NodeCard: View {
                 }
             }
             Divider()
+            DebugInfoMenu(node: node)
             Button("Copy device name") { copy(node.name) }
             if let idPair = node.idPairLabel {
                 Button("Copy device ID") { copy(idPair) }
@@ -1016,6 +1017,33 @@ private struct LinkPopoverView: View {
                 .textCase(.uppercase)
                 .gridCellColumns(2)
                 .padding(.top, 3)
+        }
+    }
+}
+
+/// Read-only debug dumps for any device: registry copies only, nothing is
+/// sent to the device.
+struct DebugInfoMenu: View {
+    @Environment(AppStore.self) private var store
+    let node: DeviceNode
+
+    private var hasVendorChannel: Bool {
+        node.bridgeInfo != nil || node.interfaces.contains { entry in
+            entry.properties["bInterfaceClass"]?.intValue == 0xFF
+                || (entry.properties["ReportDescriptor"]?.dataValue.map { HIDDescriptor($0).vendorDefined } ?? false)
+        }
+    }
+
+    var body: some View {
+        Menu("Debug Info") {
+            Button("Copy Registry Properties (JSON)") { store.copyRawProperties(of: node) }
+            if node.interfaces.contains(where: { $0.properties["ReportDescriptor"] != nil }) {
+                Button("Copy HID Report Descriptors (hex + decoded)") { store.copyReportDescriptors(of: node) }
+            }
+            if hasVendorChannel {
+                Divider()
+                Button("Find Vendor Documentation & Tools") { store.searchVendorDocumentation(for: node) }
+            }
         }
     }
 }
