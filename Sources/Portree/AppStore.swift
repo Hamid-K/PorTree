@@ -619,6 +619,41 @@ final class AppStore {
         appendEvent(EventRow(kind: .info, title: "Trusted — \(node.name)", detail: "added to known devices", nodeID: node.id))
     }
 
+    /// Software unplug/replug (IOUSBHostDevice.reset). Runs off the main
+    /// thread; the hotplug monitor then shows the normal removal ghost and
+    /// arrival glow as the device really re-enumerates.
+    func reenumerate(_ node: DeviceNode) {
+        appendEvent(EventRow(
+            kind: .info,
+            title: "Re-enumerating — \(node.name)",
+            detail: "software unplug/replug requested",
+            nodeID: node.id
+        ))
+        let entryID = node.id
+        let name = node.name
+        Task.detached(priority: .userInitiated) {
+            let outcome = USBReenumerator.reenumerate(entryID: entryID)
+            await MainActor.run {
+                switch outcome {
+                case .reenumerated:
+                    break  // the hotplug events tell the story
+                case .exclusiveAccess:
+                    AppStore.shared.appendEvent(EventRow(
+                        kind: .alert,
+                        title: "Re-enumerate refused — \(name)",
+                        detail: "its kernel driver holds the device exclusively (hubs always do); resetting it needs root"
+                    ))
+                case .failed(let message):
+                    AppStore.shared.appendEvent(EventRow(
+                        kind: .alert,
+                        title: "Re-enumerate failed — \(name)",
+                        detail: message
+                    ))
+                }
+            }
+        }
+    }
+
     func trustAllConnected() {
         guard let snapshot else { return }
         let added = trustStore.learn(from: snapshot)

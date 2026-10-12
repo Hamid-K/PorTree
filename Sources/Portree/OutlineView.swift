@@ -79,6 +79,14 @@ struct OutlineView: View {
                     Button("Trust this device") { store.trustDevice(node) }
                     Divider()
                 }
+                if node.kind == .usbDevice {
+                    Button(node.hasStorageInterface
+                        ? "Re-enumerate (unplug/replug — ejects its storage!)"
+                        : "Re-enumerate (unplug/replug)") {
+                        store.reenumerate(node)
+                    }
+                    Divider()
+                }
                 Button("Copy device name") { copyToPasteboard(node.name) }
                 if let idPair = node.idPairLabel {
                     Button("Copy device ID") { copyToPasteboard(idPair) }

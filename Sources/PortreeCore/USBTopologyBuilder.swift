@@ -217,16 +217,33 @@ public enum USBTopologyBuilder {
         defer { children.forEach { IOObjectRelease($0) } }
         return children.enumerated().compactMap { index, child in
             guard Registry.conforms(child, to: "IOUSBHostInterface") else { return nil }
-            let props = Registry.properties(of: child)
+            var props = Registry.properties(of: child)
             let number = props["bInterfaceNumber"]?.intValue ?? Int64(index)
             let cls = props["bInterfaceClass"]?.intValue ?? 0
             let sub = props["bInterfaceSubClass"]?.intValue ?? 0
             let proto = props["bInterfaceProtocol"]?.intValue ?? 0
             let endpoints = props["bNumEndpoints"]?.intValue ?? 0
             let ifName = props["kUSBString"]?.stringValue ?? Registry.name(of: child)
+            // HID interfaces: pull the HID driver child's DeviceUsagePairs up
+            // onto the interface — the usage page is what separates a real
+            // keyboard from a vendor bridge (hub controllers expose HID-I2C
+            // configuration endpoints that are class 3 but usage 0xFF).
+            if cls == 3 {
+                let hidChildren = Registry.children(of: child, plane: "IOService")
+                defer { hidChildren.forEach { IOObjectRelease($0) } }
+                for hidChild in hidChildren {
+                    if let pairs = Registry.properties(of: hidChild)["DeviceUsagePairs"] {
+                        props["DeviceUsagePairs"] = pairs
+                        break
+                    }
+                }
+            }
             var detail = Format.usbClassName(cls)
                 + String(format: " (%02llX/%02llX/%02llX)", cls, sub, proto)
                 + " · \(endpoints) endpoint\(endpoints == 1 ? "" : "s")"
+            if let usage = Format.hidUsageLabel(props["DeviceUsagePairs"]) {
+                detail += " · \(usage)"
+            }
             if let owner = props["UsbExclusiveOwner"]?.stringValue {
                 detail += " · owner: \(owner)"
             }
@@ -302,6 +319,20 @@ public enum USBTopologyBuilder {
 
     /// HID boot protocol tells keyboard (1) from mouse (2); names break ties.
     private static func hidFamily(interfaces: [SubEntry], lowered: String) -> DeviceCategory {
+        // HID usage pages are the ground truth: a "HID" interface whose only
+        // usages are vendor-defined is a configuration/bridge endpoint
+        // (Microchip hub controllers expose HID-I2C bridges), not an input
+        // device — never show it as a keyboard.
+        let pairs = SubEntry.hidUsagePairs(of: interfaces)
+        let inputPages: Set<Int64> = [0x01, 0x0C, 0x0D]  // desktop, consumer, digitizer
+        let hasInputUsage = pairs.contains { inputPages.contains($0.page) }
+        let vendorOnly = !pairs.isEmpty
+            && pairs.allSatisfy { $0.page == 0xFF || $0.page >= 0xFF00 }
+        if vendorOnly && !hasInputUsage { return .controller }
+        if pairs.contains(where: { $0.page == 0x01 && $0.usage == 0x02 }),
+           !pairs.contains(where: { $0.page == 0x01 && ($0.usage == 0x06 || $0.usage == 0x07) }) {
+            return .mouse
+        }
         if lowered.contains("mouse") || lowered.contains("trackpad") || lowered.contains("receiver") { return .mouse }
         if lowered.contains("keyboard") { return .hid }
         let protocols = interfaces.compactMap { entry -> Int64? in

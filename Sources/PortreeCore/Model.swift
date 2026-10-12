@@ -29,6 +29,19 @@ public struct SubEntry: Sendable, Hashable, Codable, Identifiable {
         self.detail = detail
         self.properties = properties
     }
+
+    /// HID DeviceUsagePairs captured from the interface's HID driver child —
+    /// (usage page, usage) per the HID usage tables.
+    public static func hidUsagePairs(of interfaces: [SubEntry]) -> [(page: Int64, usage: Int64)] {
+        interfaces.flatMap { entry in
+            (entry.properties["DeviceUsagePairs"]?.arrayValue ?? []).compactMap { value in
+                guard let dict = value.dictValue,
+                      let page = dict["DeviceUsagePage"]?.intValue,
+                      let usage = dict["DeviceUsage"]?.intValue else { return nil }
+                return (page, usage)
+            }
+        }
+    }
 }
 
 /// Info about a merged USB2/USB3 hub twin (one physical hub, two logical
@@ -107,14 +120,19 @@ extension DeviceNode {
     public var deviceClassCode: Int64? { properties["bDeviceClass"]?.intValue }
     public var isHub: Bool { deviceClassCode == 9 }
 
-    /// HID boot-keyboard interface (class 3, subclass 1, protocol 1) — the
-    /// signature a keystroke-injection device must expose to type.
+    /// Can this device type into the Mac? True for a HID boot-keyboard
+    /// interface (class 3, subclass 1, protocol 1) OR a HID usage-table
+    /// keyboard/keypad (page 0x01, usage 0x06/0x07) — non-boot keyboards
+    /// count too. A vendor-usage HID bridge (hub controllers' HID-I2C
+    /// endpoints) does NOT count.
     public var hasKeyboardInterface: Bool {
-        interfaces.contains {
+        if interfaces.contains(where: {
             $0.properties["bInterfaceClass"]?.intValue == 3
                 && $0.properties["bInterfaceSubClass"]?.intValue == 1
                 && $0.properties["bInterfaceProtocol"]?.intValue == 1
-        }
+        }) { return true }
+        return SubEntry.hidUsagePairs(of: interfaces)
+            .contains { $0.page == 0x01 && ($0.usage == 0x06 || $0.usage == 0x07) }
     }
 
     public var hasStorageInterface: Bool {

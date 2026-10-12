@@ -7,7 +7,7 @@ let package = Package(
     targets: [
         .target(
             name: "PortreeCore",
-            linkerSettings: [.linkedFramework("IOKit")]
+            linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("IOUSBHost")]
         ),
         .executableTarget(
             name: "Portree",

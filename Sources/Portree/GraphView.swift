@@ -873,6 +873,14 @@ private struct NodeCard: View {
             Button(store.expandedTags.contains(node.id) ? "Collapse tags" : "Expand tags") {
                 store.toggleTagExpansion(node.id)
             }
+            if node.kind == .usbDevice {
+                Divider()
+                Button(node.hasStorageInterface
+                    ? "Re-enumerate (unplug/replug — ejects its storage!)"
+                    : "Re-enumerate (unplug/replug)") {
+                    store.reenumerate(node)
+                }
+            }
             Divider()
             Button("Copy device name") { copy(node.name) }
             if let idPair = node.idPairLabel {

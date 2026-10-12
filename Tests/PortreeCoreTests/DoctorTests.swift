@@ -155,3 +155,28 @@ import Foundation
         }
     }
 }
+
+@Suite struct HIDUsageTests {
+    private func pairs(_ list: [(Int64, Int64)]) -> PropertyValue {
+        .array(list.map { .dict(["DeviceUsagePage": .int($0.0), "DeviceUsage": .int($0.1)]) })
+    }
+
+    @Test func vendorHIDBridgeIsNotAKeyboard() {
+        // Microchip hub controller shape: class 3 sub 0 proto 0, usage 0xFF:1.
+        var bridge = fixture(id: 30, name: "USB2 Controller Hub", vid: 0x0424, pid: 0x7260)
+        bridge.interfaces = [SubEntry(id: "i1", title: "HID I2C", detail: "", properties: [
+            "bInterfaceClass": .int(3), "bInterfaceSubClass": .int(0), "bInterfaceProtocol": .int(0),
+            "DeviceUsagePairs": pairs([(0xFF, 1)]),
+        ])]
+        #expect(!bridge.hasKeyboardInterface)
+    }
+
+    @Test func usageTableKeyboardCountsWithoutBootProtocol() {
+        var keyboard = fixture(id: 31, name: "Fancy KB", vid: 1, pid: 2)
+        keyboard.interfaces = [SubEntry(id: "i1", title: "kb", detail: "", properties: [
+            "bInterfaceClass": .int(3), "bInterfaceSubClass": .int(0), "bInterfaceProtocol": .int(0),
+            "DeviceUsagePairs": pairs([(0x01, 0x06)]),
+        ])]
+        #expect(keyboard.hasKeyboardInterface)
+    }
+}

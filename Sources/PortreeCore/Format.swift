@@ -8,6 +8,32 @@ public enum Tier: String, Sendable, Codable, Hashable {
 
 public enum Format {
 
+    /// Human label for HID DeviceUsagePairs — per the HID usage tables
+    /// (page 0x01 generic desktop, 0x0C consumer, 0x0D digitizer; 0xFF /
+    /// 0xFF00+ vendor-defined). Nil when no pairs are present.
+    public static func hidUsageLabel(_ pairs: PropertyValue?) -> String? {
+        guard let array = pairs?.arrayValue, !array.isEmpty else { return nil }
+        let labels = array.compactMap { value -> String? in
+            guard let dict = value.dictValue,
+                  let page = dict["DeviceUsagePage"]?.intValue,
+                  let usage = dict["DeviceUsage"]?.intValue else { return nil }
+            switch (page, usage) {
+            case (0x01, 0x02): return "HID: mouse"
+            case (0x01, 0x04): return "HID: joystick"
+            case (0x01, 0x05): return "HID: gamepad"
+            case (0x01, 0x06): return "HID: keyboard"
+            case (0x01, 0x07): return "HID: keypad"
+            case (0x01, 0x80): return "HID: system control"
+            case (0x0C, _): return "HID: consumer control"
+            case (0x0D, _): return "HID: digitizer"
+            case (let p, let u) where p == 0xFF || p >= 0xFF00:
+                return "HID: vendor-defined (\(hex(p)):\(u)) — bridge/config, not an input device"
+            default: return "HID: page \(hex(page)) usage \(usage)"
+            }
+        }
+        return labels.isEmpty ? nil : Set(labels).sorted().joined(separator: " · ")
+    }
+
     /// Numeric semver comparison for release tags ("v1.2.0", "1.10.3").
     /// Returns negative when a < b, 0 when equal, positive when a > b.
     /// Non-numeric components compare as 0 — honest fallback, never a crash.
