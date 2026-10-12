@@ -77,6 +77,17 @@ struct InspectorView: View {
                     .appFont(10.5)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                let extras = store.additionalCategories(of: node)
+                if !extras.isEmpty {
+                    HStack(spacing: 4) {
+                        Text("Also:").appFont(10).foregroundStyle(.tertiary)
+                        ForEach(extras, id: \.self) { extra in
+                            Label(extra.singularLabel, systemImage: extra.symbol)
+                                .appFont(10)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
             Spacer()
             WebLookupButton(node: node)

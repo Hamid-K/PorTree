@@ -785,6 +785,21 @@ private struct NodeCard: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 2 * z)
+                // Secondary types: a hub-monitor's hub side, a keyboard
+                // interface on a storage stick, a bridge with a serial port…
+                let extras = store.additionalCategories(of: node)
+                if !extras.isEmpty {
+                    HStack(spacing: 3 * z) {
+                        ForEach(extras, id: \.self) { extra in
+                            Image(systemName: extra.symbol)
+                                .appFont(8.5, weight: .semibold)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16 * z, height: 16 * z)
+                                .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 4 * z))
+                        }
+                    }
+                    .help("Also: " + extras.map(\.singularLabel).joined(separator: ", "))
+                }
                 if !node.children.isEmpty || collapsedCount > 0 {
                     Button {
                         store.toggleCollapsed(node.id)

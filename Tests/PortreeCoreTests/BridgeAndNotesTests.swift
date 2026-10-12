@@ -114,3 +114,48 @@ import Foundation
         #expect(ReleaseNotes.blocks("  \n\n ").isEmpty)
     }
 }
+
+@Suite struct DeviceTypeTests {
+    private func iface(_ cls: Int64, _ sub: Int64 = 0, _ proto: Int64 = 0, name: String? = nil, page: Int64? = nil, usage: Int64 = 1) -> SubEntry {
+        var props: [String: PropertyValue] = [
+            "bInterfaceClass": .int(cls), "bInterfaceSubClass": .int(sub), "bInterfaceProtocol": .int(proto),
+        ]
+        if let name { props["Portree InterfaceName"] = .string(name) }
+        if let page { props["DeviceUsagePairs"] = .array([.dict(["DeviceUsagePage": .int(page), "DeviceUsage": .int(usage)])]) }
+        return SubEntry(id: "if-\(cls)-\(name ?? "")", title: "ifc", detail: "", properties: props)
+    }
+
+    @Test func bridgeBecomesItsOwnTypeOnlyWhenNothingMoreSpecificApplies() {
+        let bridge = BridgeInfo(buses: ["I2C"], chip: nil)
+        #expect(BridgeInfo.category(for: .controller, bridge: bridge) == .bridge)
+        #expect(BridgeInfo.category(for: .vendor, bridge: bridge) == .bridge)
+        #expect(BridgeInfo.category(for: .hid, bridge: bridge) == .hid)       // a keyboard stays a keyboard
+        #expect(BridgeInfo.category(for: .serial, bridge: bridge) == .serial) // console wins
+        #expect(BridgeInfo.category(for: .controller, bridge: nil) == .controller)
+    }
+
+    @Test func hubControllerBridgeHasNoExtraTypes() {
+        var node = fixture(id: 1, name: "USB2 Controller Hub", vid: 0x0424, pid: 0x7260)
+        node.interfaces = [iface(0xFF, 0xFF, 0xFF), iface(3, name: "HID I2C", page: 0xFF)]
+        #expect(node.additionalCategories(primary: .bridge, hasSerialPort: false).isEmpty)
+    }
+
+    @Test func badUSBCompositeShowsTheKeyboardBadge() {
+        var stick = fixture(id: 2, name: "Flash Drive", vid: 1, pid: 2)
+        stick.interfaces = [iface(8, 6, 0x50), iface(3, 1, 1)]
+        #expect(stick.additionalCategories(primary: .storage, hasSerialPort: false) == [.hid])
+    }
+
+    @Test func serialBridgeShowsTheBridgeBadge() {
+        // MCP2221 shape: CDC serial + vendor HID; main type serial.
+        var node = fixture(id: 3, name: "MCP2221 USB-I2C/UART Combo", vid: 0x04D8, pid: 0x00DD)
+        node.interfaces = [iface(2, 2, 1), iface(0x0A), iface(3, page: 0xFF00)]
+        #expect(node.additionalCategories(primary: .serial, hasSerialPort: true) == [.bridge])
+    }
+
+    @Test func extrasAreCappedAtThree() {
+        var node = fixture(id: 4, name: "Everything Device", vid: 5, pid: 6)
+        node.interfaces = [iface(3, 1, 1), iface(8), iface(1), iface(0x0E), iface(0xE0)]
+        #expect(node.additionalCategories(primary: .hub, hasSerialPort: true).count == 3)
+    }
+}

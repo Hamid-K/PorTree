@@ -16,6 +16,8 @@ public enum DeviceCategory: String, Sendable, Codable, Hashable {
     /// Exposes a serial port (CDC-ACM or a UART bridge) — detected from the
     /// IOSerialBSDClient node, never from vendor IDs.
     case serial
+    /// A USB-to-I2C/SMBus/SPI/UART bridge (see BridgeInfo for the evidence).
+    case bridge
 }
 
 /// A secondary detail row under a node: a USB interface, or a Thunderbolt
@@ -60,6 +62,44 @@ public struct BridgeInfo: Sendable, Hashable {
     public var compactLabel: String { chip == nil ? busLabel + " · by name" : busLabel }
     public var label: String {
         busLabel + (chip.map { " (\($0))" } ?? " (per interface name)")
+    }
+
+    public static func detect(vendorID: Int64?, productID: Int64?, interfaces: [SubEntry]) -> BridgeInfo? {
+        if let vid = vendorID, let pid = productID, let chip = knownChips[vid << 16 | pid] {
+            // FT260: strap pins (DCNF0/1) enable I2C, UART or both — one HID
+            // interface per enabled function. The chip ID proves the part,
+            // not the mode.
+            if vid == 0x0403, pid == 0x6030 {
+                let hidCount = interfaces.filter { $0.properties["bInterfaceClass"]?.intValue == 3 }.count
+                switch hidCount {
+                case 2: return BridgeInfo(buses: ["I2C", "UART"], chip: chip.name)
+                case 1: return BridgeInfo(buses: ["I2C or UART"], chip: chip.name + ", one function set by pins")
+                default: return BridgeInfo(buses: ["I2C and/or UART"], chip: chip.name)
+                }
+            }
+            return BridgeInfo(buses: chip.buses, chip: chip.name)
+        }
+        var buses: [String] = []
+        for entry in interfaces {
+            let cls = entry.properties["bInterfaceClass"]?.intValue
+            let pairs = SubEntry.hidUsagePairs(of: [entry])
+            let vendorHID = cls == 3 && !pairs.isEmpty && pairs.allSatisfy { $0.page == 0xFF || $0.page >= 0xFF00 }
+            guard vendorHID || cls == 0xFF,
+                  let name = entry.properties["Portree InterfaceName"]?.stringValue else { continue }
+            for bus in busNames(in: name) where !buses.contains(bus) { buses.append(bus) }
+        }
+        return buses.isEmpty ? nil : BridgeInfo(buses: buses, chip: nil)
+    }
+
+    /// A bridge is its own device type only when nothing more specific
+    /// describes it: serial ports, keyboards, hubs, docks, storage and the
+    /// like keep their type, and the bridge shows as a secondary badge.
+    public static func category(for base: DeviceCategory, bridge: BridgeInfo?) -> DeviceCategory {
+        guard bridge != nil else { return base }
+        switch base {
+        case .controller, .vendor, .unknown: return .bridge
+        default: return base
+        }
     }
 
     /// Documented single-purpose USB bridge chips — the vid:pid alone
@@ -234,30 +274,41 @@ extension DeviceNode {
     /// proof), or a vendor-defined interface whose OWN name says which bus
     /// it bridges (as strong as the vendor's naming — labeled as such).
     public var bridgeInfo: BridgeInfo? {
-        if let vid = vendorID, let pid = productID, let chip = BridgeInfo.knownChips[vid << 16 | pid] {
-            // FT260: strap pins (DCNF0/1) enable I2C, UART or both — one HID
-            // interface per enabled function. The chip ID proves the part,
-            // not the mode.
-            if vid == 0x0403, pid == 0x6030 {
-                let hidCount = interfaces.filter { $0.properties["bInterfaceClass"]?.intValue == 3 }.count
-                switch hidCount {
-                case 2: return BridgeInfo(buses: ["I2C", "UART"], chip: chip.name)
-                case 1: return BridgeInfo(buses: ["I2C or UART"], chip: chip.name + ", one function set by pins")
-                default: return BridgeInfo(buses: ["I2C and/or UART"], chip: chip.name)
-                }
-            }
-            return BridgeInfo(buses: chip.buses, chip: chip.name)
+        BridgeInfo.detect(vendorID: vendorID, productID: productID, interfaces: interfaces)
+    }
+
+    /// Other device types this node ALSO is, beyond its main type — shown as
+    /// small secondary icons. Each comes from registry evidence: a display
+    /// whose topology node is a hub/dock, interfaces of other classes, HID
+    /// usages, a bridge, a serial port. At most three, most telling first.
+    public func additionalCategories(primary: DeviceCategory, hasSerialPort: Bool) -> [DeviceCategory] {
+        var extra: [DeviceCategory] = []
+        func add(_ candidate: DeviceCategory) {
+            if candidate != primary, !extra.contains(candidate) { extra.append(candidate) }
         }
-        var buses: [String] = []
+        // Security-relevant first: something that can type, on a device
+        // whose main type is not a keyboard (the BadUSB shape).
+        if hasKeyboardInterface { add(.hid) }
+        if hasStorageInterface { add(.storage) }
+        // The topology node's own type when the shown type differs (a
+        // hub-monitor shows as a display; its hub side is real too).
+        if ![.unknown, .vendor, .controller, .system].contains(category) { add(category) }
+        if bridgeInfo != nil { add(.bridge) }
+        if hasSerialPort { add(.serial) }
+        let pairs = SubEntry.hidUsagePairs(of: interfaces)
+        if pairs.contains(where: { $0.page == 0x01 && $0.usage == 0x02 }) { add(.mouse) }
         for entry in interfaces {
             let cls = entry.properties["bInterfaceClass"]?.intValue
-            let pairs = SubEntry.hidUsagePairs(of: [entry])
-            let vendorHID = cls == 3 && !pairs.isEmpty && pairs.allSatisfy { $0.page == 0xFF || $0.page >= 0xFF00 }
-            guard vendorHID || cls == 0xFF,
-                  let name = entry.properties["Portree InterfaceName"]?.stringValue else { continue }
-            for bus in BridgeInfo.busNames(in: name) where !buses.contains(bus) { buses.append(bus) }
+            let sub = entry.properties["bInterfaceSubClass"]?.intValue
+            switch cls {
+            case 0x01: add(.audio)
+            case 0x0E: add(.video)
+            case 0xE0: add(.wireless)
+            case 0x02 where sub == 0x06 || sub == 0x0D: add(.network)  // CDC-ECM / CDC-NCM
+            default: break
+            }
         }
-        return buses.isEmpty ? nil : BridgeInfo(buses: buses, chip: nil)
+        return Array(extra.prefix(3))
     }
 
     /// USB billboard device (class 0x11): a USB-C alt-mode adapter

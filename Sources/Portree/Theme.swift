@@ -49,6 +49,7 @@ extension DeviceCategory {
         case .printer: return "printer"
         case .smartCard: return "creditcard"
         case .serial: return "terminal"
+        case .bridge: return "app.connected.to.app.below.fill"
         case .wireless: return "dot.radiowaves.left.and.right"
         case .tbSwitch: return "bolt.horizontal"
         case .tbDomain: return "bolt.horizontal.circle"
@@ -77,6 +78,7 @@ extension DeviceCategory {
         case .printer: return "Printers"
         case .smartCard: return "Smart cards"
         case .serial: return "Serial ports"
+        case .bridge: return "Bridges"
         case .wireless: return "Wireless"
         case .tbSwitch: return "Thunderbolt devices"
         case .tbDomain: return "Thunderbolt domains"
@@ -85,6 +87,29 @@ extension DeviceCategory {
         case .unknown: return "Unidentified"
         case .pci: return "PCIe"
         case .system: return "System"
+        }
+    }
+
+    /// One-item name for tooltips ("Also: dock, storage").
+    var singularLabel: String {
+        switch self {
+        case .hub: return "hub"
+        case .dock: return "dock"
+        case .hid: return "keyboard"
+        case .mouse: return "pointing device"
+        case .storage: return "storage"
+        case .audio: return "audio input"
+        case .speaker: return "audio output"
+        case .video: return "camera"
+        case .network: return "network"
+        case .display: return "display"
+        case .printer: return "printer"
+        case .smartCard: return "smart card"
+        case .serial: return "serial port"
+        case .bridge: return "bus bridge"
+        case .wireless: return "wireless"
+        case .adapter: return "adapter"
+        default: return typeLabel.lowercased()
         }
     }
 

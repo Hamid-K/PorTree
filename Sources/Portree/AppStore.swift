@@ -1291,6 +1291,15 @@ final class AppStore {
         appendEvent(EventRow(kind: .info, title: "Web search opened", detail: query, nodeID: node.id))
     }
 
+    /// The other device types a node also is (secondary icons on its card).
+    func additionalCategories(of node: DeviceNode) -> [DeviceCategory] {
+        guard node.kind == .usbDevice || node.kind == .tbSwitch || node.kind == .displaySink else { return [] }
+        return node.additionalCategories(
+            primary: effectiveCategory(of: node),
+            hasSerialPort: !serialPorts(for: node).isEmpty
+        )
+    }
+
     /// Serial ports (/dev/cu.*) owned by this USB device — generic: any
     /// driver that publishes an IOSerialBSDClient under it.
     func serialPorts(for node: DeviceNode) -> [SerialPort] {

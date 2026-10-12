@@ -199,6 +199,16 @@ public enum USBTopologyBuilder {
         if serialOwners.contains(Registry.entryID(of: entry)), category != .hub, category != .dock {
             category = .serial
         }
+        // A USB-to-I2C/SPI/UART bridge is its own device type unless
+        // something more specific (serial port, hub, storage…) already is.
+        category = BridgeInfo.category(
+            for: category,
+            bridge: BridgeInfo.detect(
+                vendorID: props["idVendor"]?.intValue,
+                productID: props["idProduct"]?.intValue,
+                interfaces: interfaces
+            )
+        )
         var (name, subtitle) = displayName(props: props, registryName: registryName)
         // Port number on the parent = last nibble of the locationID path.
         if let location = props["locationID"]?.intValue, let port = Format.lastPort(locationID: location) {
