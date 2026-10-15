@@ -840,6 +840,15 @@ private struct NodeCard: View {
                     .offset(x: -6 * z, y: -7 * z)
             }
         }
+        .overlay(alignment: store.orientation == .leftToRight ? .trailing : .bottom) {
+            // End of the USB chain: a hub at the controller's tier limit gets
+            // no usable ports, so its downstream edge is capped with a dotted
+            // red bar. Nothing plugged in past this point can enumerate.
+            if node.isHub, let usb = store.usbTier(of: node), usb.tier >= usb.limit {
+                EndOfChainBar(horizontal: store.orientation == .leftToRight, scale: z)
+                    .help("End of chain: tier \(usb.tier) of \(usb.limit). Nothing plugged into this hub can enumerate.")
+            }
+        }
         .overlay(alignment: .topLeading) {
             // Device guard: unmissable blinking red dot on unknown devices.
             if store.untrustedIDs.contains(node.id) {
@@ -1060,6 +1069,33 @@ struct DebugInfoMenu: View {
                 Button("Find Vendor Documentation & Tools") { store.searchVendorDocumentation(for: node) }
             }
         }
+    }
+}
+
+/// Dotted red cap on a hub's downstream edge: the end of the USB chain.
+struct EndOfChainBar: View {
+    let horizontal: Bool
+    var scale: CGFloat = 1
+
+    var body: some View {
+        Canvas { context, size in
+            var path = Path()
+            if horizontal {
+                path.move(to: CGPoint(x: size.width / 2, y: 0))
+                path.addLine(to: CGPoint(x: size.width / 2, y: size.height))
+            } else {
+                path.move(to: CGPoint(x: 0, y: size.height / 2))
+                path.addLine(to: CGPoint(x: size.width, y: size.height / 2))
+            }
+            context.stroke(
+                path,
+                with: .color(.red),
+                style: StrokeStyle(lineWidth: 3 * scale, lineCap: .round, dash: [0.1, 6 * scale])
+            )
+        }
+        .frame(width: horizontal ? 6 * scale : nil, height: horizontal ? nil : 6 * scale)
+        .padding(horizontal ? .vertical : .horizontal, 6 * scale)
+        .offset(x: horizontal ? 9 * scale : 0, y: horizontal ? 0 : 9 * scale)
     }
 }
 

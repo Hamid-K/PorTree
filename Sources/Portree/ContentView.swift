@@ -343,6 +343,11 @@ struct LegendView: View {
                         .frame(width: 20, height: 2)
                     Text("video on link (DP tunnel / DisplayLink)").appFont(10)
                 }
+                HStack(spacing: 7) {
+                    EndOfChainBar(horizontal: false)
+                        .frame(width: 20, height: 6)
+                    Text("end of USB chain (hub at the tier limit)").appFont(10)
+                }
                 Divider().frame(width: 180)
                 Text("thickness = speed · dashed = USB 1.x\nwide soft bar = system backbone")
                     .appFont(9)

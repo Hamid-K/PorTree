@@ -95,7 +95,7 @@ The Doctor re-runs automatically on every topology change and grades findings as
 - **Power budget** — subtree draw vs the port's real current limit, with an early warning at 80% and a problem when oversubscribed
 - **Overcurrent events** — the kernel's per-port overcurrent counter, attributed to the attached device
 - **Enumeration/address failures and SuperSpeed link errors** — per-port counters since boot (flaky cable forensics)
-- **Hub chain depth** — tiers counted the way macOS counts them (the controller's root hub is tier 1). A hub sitting at the controller's tier limit is a **problem**: macOS brings up none of its ports, so devices plugged into it get power and light up but never enumerate. One tier earlier is a warning: devices there work, but a hub plugged in there won't
+- **Hub chain depth** — tiers counted the way macOS counts them (the controller's root hub is tier 1). A hub sitting at the controller's tier limit is a **problem**: macOS brings up none of its ports, so devices plugged into it get power and light up but never enumerate. One tier earlier is a warning: devices there work, but a hub plugged in there won't. In the graph, a hub at the limit gets a **dotted red bar on its downstream edge**: the end of the chain
 - **Single-TT contention** — multiple low/full-speed devices sharing one transaction translator
 - **No free ports** — a fully occupied hub
 - **Input-device anomalies** — a keyboard interface paired with mass storage on one device (the classic BadUSB/keystroke-injection carrier, problem), a keyboard interface on a device that doesn't present as a keyboard (warning), and a note on every keyboard-class device when more than one can type into the Mac. A keyboard-class hot-plug always raises an alert event
