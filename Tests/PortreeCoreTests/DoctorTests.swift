@@ -78,13 +78,34 @@ import Foundation
     }
 
     @Test func deepChainWarnsEarlyAndErrorsAtLimit() {
-        let tier3 = fixture(id: 4, deviceClass: 9, bps: 480_000_000)
-        let tier2 = fixture(id: 3, deviceClass: 9, bps: 480_000_000, children: [tier3])
-        let tier1 = fixture(id: 2, deviceClass: 9, bps: 480_000_000, children: [tier2])
-        let report = diagnose([controller(id: 1, tierLimit: 3, children: [tier1])])
-        #expect(report.byNode[3]?.contains { $0.kind == .deepChain && $0.severity == .warning } == true)
+        // Tiers count from the root hub (tier 1): external hubs sit at 2, 3, 4.
+        let tier4 = fixture(id: 4, deviceClass: 9, bps: 480_000_000)
+        let tier3 = fixture(id: 3, deviceClass: 9, bps: 480_000_000, children: [tier4])
+        let tier2 = fixture(id: 2, deviceClass: 9, bps: 480_000_000, children: [tier3])
+        let report = diagnose([controller(id: 1, tierLimit: 3, children: [tier2])])
+        #expect(report.byNode[2]?.contains { $0.kind == .deepChain && $0.severity == .warning } == true)
+        #expect(report.byNode[3]?.contains { $0.kind == .deepChain && $0.severity == .problem } == true)
         #expect(report.byNode[4]?.contains { $0.kind == .deepChain && $0.severity == .problem } == true)
-        #expect(report.byNode[2]?.contains { $0.kind == .deepChain } != true)
+    }
+
+    /// The live case: a 5-hub chain under UsbHostControllerTierLimit = 6.
+    /// The 5th external hub is at tier 6 = the limit and publishes no ports;
+    /// its tier-5 parent still enumerates devices.
+    @Test func fifthExternalHubAtLimitSixIsAProblem() {
+        let genesys = fixture(id: 15, name: "USB3.1 Hub", deviceClass: 9, bps: 5_000_000_000)
+        let keyboard = fixture(id: 16, name: "Keychron Link", vid: 1, pid: 2, bps: 12_000_000)
+        let hub4 = fixture(id: 14, deviceClass: 9, bps: 480_000_000, children: [genesys, keyboard])
+        let hub3 = fixture(id: 13, deviceClass: 9, bps: 480_000_000, children: [hub4])
+        let hub2 = fixture(id: 12, deviceClass: 9, bps: 480_000_000, children: [hub3])
+        let hub1 = fixture(id: 11, deviceClass: 9, bps: 480_000_000, children: [hub2])
+        let report = diagnose([controller(id: 10, tierLimit: 6, children: [hub1])])
+
+        let atLimit = report.byNode[15]?.first { $0.kind == .deepChain }
+        #expect(atLimit?.severity == .problem)
+        #expect(atLimit?.detail.contains("tier 6 of 6") == true)
+        #expect(atLimit?.detail.contains("published no downstream ports") == true)
+        #expect(report.byNode[14]?.contains { $0.kind == .deepChain && $0.severity == .warning } == true)
+        #expect(report.byNode[13]?.contains { $0.kind == .deepChain } != true)
     }
 
     @Test func singleTTContention() {

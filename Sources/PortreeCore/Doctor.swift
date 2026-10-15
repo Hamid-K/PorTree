@@ -167,22 +167,33 @@ public enum Doctor {
                     ))
                 }
 
+                // Tiers count from the controller's root hub (tier 1), so the
+                // Nth external hub sits at tier N+1. A hub AT the controller's
+                // tier limit gets no downstream ports: anything plugged into
+                // it can't be a legal tier, so macOS never brings the ports up
+                // (they may still deliver power). Verified live: tier-6 hubs
+                // under UsbHostControllerTierLimit = 6 publish no ports, while
+                // their tier-5 parents enumerate devices normally.
                 if node.isHub {
-                    if hubDepth >= tierLimit {
+                    let tier = hubDepth + 1
+                    let noPorts = (node.properties["Portree Ports Total"]?.intValue ?? 0) == 0
+                    if tier >= tierLimit {
                         issues.append(Issue(
                             kind: .deepChain,
                             severity: .problem,
                             nodeID: node.id,
-                            title: "Hub chain at tier limit",
-                            detail: "This hub sits at tier \(hubDepth) of \(tierLimit) (UsbHostControllerTierLimit). Devices behind it may fail to enumerate."
+                            title: "Hub at tier limit — nothing behind it enumerates",
+                            detail: "This hub is at tier \(tier) of \(tierLimit), the deepest tier the controller allows (UsbHostControllerTierLimit), so devices plugged into it can't be enumerated"
+                                + (noPorts ? " — macOS published no downstream ports for it." : ".")
+                                + " Its ports may still power devices, so they light up but never appear. Plug this hub in one level closer to the Mac."
                         ))
-                    } else if hubDepth == tierLimit - 1 {
+                    } else if tier == tierLimit - 1 {
                         issues.append(Issue(
                             kind: .deepChain,
                             severity: .warning,
                             nodeID: node.id,
                             title: "Deep hub chain",
-                            detail: "Tier \(hubDepth) of \(tierLimit) — one more hub level below this point will hit the controller's tier limit and fail to enumerate."
+                            detail: "Tier \(tier) of \(tierLimit). Devices plugged in here work, but a hub plugged in here lands on the controller's tier limit, and nothing behind it will enumerate."
                         ))
                     }
                 }
