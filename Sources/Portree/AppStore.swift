@@ -1291,6 +1291,58 @@ final class AppStore {
         appendEvent(EventRow(kind: .info, title: "Web search opened", detail: query, nodeID: node.id))
     }
 
+    /// Levels below the System root in the displayed tree.
+    func treeDepth(of node: DeviceNode) -> Int {
+        var depth = 0
+        var cursor = parentOf[node.id]
+        while let current = cursor {
+            depth += 1
+            cursor = parentOf[current]
+        }
+        return depth
+    }
+
+    /// USB tier the way macOS counts it: the controller's root hub is tier 1,
+    /// so a device on a root port is tier 2 and each hub above adds one.
+    /// Nil for nodes outside a USB controller's tree.
+    func usbTier(of node: DeviceNode) -> (tier: Int, limit: Int)? {
+        if node.kind == .usbController {
+            return (1, Int(node.properties["UsbHostControllerTierLimit"]?.intValue ?? 6))
+        }
+        guard node.kind == .usbDevice else { return nil }
+        var hubsAbove = 0
+        var cursor = parentOf[node.id]
+        while let current = cursor, let parent = allNodes[current] {
+            if parent.kind == .usbController {
+                let limit = Int(parent.properties["UsbHostControllerTierLimit"]?.intValue ?? 6)
+                return (hubsAbove + 2, limit)
+            }
+            if parent.isHub { hubsAbove += 1 }
+            cursor = parentOf[current]
+        }
+        return nil
+    }
+
+    /// One-line depth description for tooltips and the inspector.
+    func depthSummary(of node: DeviceNode) -> String {
+        if let usb = usbTier(of: node) {
+            // The limit matters differently for hubs and devices: a device AT
+            // the limit works; a hub at the limit gets no usable ports.
+            var state = ""
+            if node.isHub {
+                if usb.tier >= usb.limit { state = " — at the limit: devices plugged in here can't enumerate" }
+                else if usb.tier == usb.limit - 1 { state = " — devices work here, another hub here won't" }
+            } else if usb.tier >= usb.limit {
+                state = " — the deepest tier allowed"
+            }
+            return "USB tier \(usb.tier) of \(usb.limit)\(state)"
+        }
+        if node.kind == .tbSwitch, let hop = node.properties["Depth"]?.intValue {
+            return hop == 0 ? "Thunderbolt host switch" : "Thunderbolt hop \(hop) from the Mac"
+        }
+        return "Depth \(treeDepth(of: node)) in the tree"
+    }
+
     /// The other device types a node also is (secondary icons on its card).
     func additionalCategories(of node: DeviceNode) -> [DeviceCategory] {
         guard node.kind == .usbDevice || node.kind == .tbSwitch || node.kind == .displaySink else { return [] }

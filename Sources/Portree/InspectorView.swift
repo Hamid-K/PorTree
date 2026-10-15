@@ -145,6 +145,10 @@ private struct DecodedTab: View {
                 }
             }
             group("Link") {
+                row("Depth", store.depthSummary(of: node))
+                if store.usbTier(of: node) != nil {
+                    row("Tree depth", "\(store.treeDepth(of: node)) levels below the Mac")
+                }
                 if !node.speedLabel.isEmpty { row("Speed", node.speedLabel) }
                 if node.linkSpeedBps > 0 { row("UsbLinkSpeed", "\(node.linkSpeedBps) b/s") }
                 if let speedEnum = node.properties["USBSpeed"]?.intValue {

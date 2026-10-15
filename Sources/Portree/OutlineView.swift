@@ -438,6 +438,7 @@ private struct OutlineNodeRow: View {
         )
         .animation(.easeOut(duration: 0.4), value: rowTint)
         .opacity(store.ghostIDs.contains(node.id) ? 0.5 : 1)
+        .help(store.depthSummary(of: node))
         .tag(node.id)
     }
 }
